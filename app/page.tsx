@@ -82,6 +82,16 @@ const GameHub: React.FC = () => {
   const featuredGames: GameCard[] = [
     {
       id: 1,
+      title: "Tic-Tac-Toe",
+      genre: "Classic/Strategy",
+      rating: 4.9,
+      players: "1-2 Players",
+      image: "https://via.placeholder.com/300x200/805AD5/ffffff?text=Tic-Tac-Toe",
+      price: "Free",
+      description: "The classic game everyone loves! Play against a friend or challenge our smart AI bot."
+    },
+    {
+      id: 2,
       title: "Cyber Quest 2024",
       genre: "RPG/Adventure",
       rating: 4.8,
@@ -91,7 +101,7 @@ const GameHub: React.FC = () => {
       description: "An immersive cyberpunk adventure in a dystopian future."
     },
     {
-      id: 2,
+      id: 3,
       title: "Space Warrior",
       genre: "Action/Shooter",
       rating: 4.6,
@@ -101,7 +111,7 @@ const GameHub: React.FC = () => {
       description: "Epic space battles across multiple galaxies."
     },
     {
-      id: 3,
+      id: 4,
       title: "Mystic Realms",
       genre: "Fantasy/Strategy",
       rating: 4.9,
@@ -392,8 +402,13 @@ const GameHub: React.FC = () => {
                             flex={1}
                             leftIcon={<FaDownload />}
                             aria-label={`Download ${game.title}`}
+                            onClick={() => {
+                              if (game.title === "Tic-Tac-Toe") {
+                                window.location.href = "/games/01";
+                              }
+                            }}
                           >
-                            Get Game
+                            {game.title === "Tic-Tac-Toe" ? "Play Now" : "Get Game"}
                           </Button>
                           <IconButton
                             aria-label={`Add ${game.title} to wishlist`}
