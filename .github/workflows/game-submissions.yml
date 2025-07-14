@@ -1,0 +1,153 @@
+name: Game Submission Workflow
+
+on:
+  repository_dispatch:
+    types: [game-submission]
+  issues:
+    types: [labeled]
+
+jobs:
+  # Handle new game submissions from the form
+  create-game-submission-issue:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'repository_dispatch' && github.event.action == 'game-submission'
+    
+    steps:
+      - name: Create GitHub Issue
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+            const submission = context.payload.client_payload.submission;
+            const timestamp = context.payload.client_payload.timestamp;
+            
+            // Create issue title and body
+            const issueTitle = `Game Idea: ${submission.title}`;
+            const issueBody = `## Game Submission Details
+
+            **Submitted by:** ${submission.submitterName}${submission.submitterEmail ? ` (${submission.submitterEmail})` : ''}
+
+            ### Game Overview
+            **Title:** ${submission.title}
+
+            **Description:**
+            ${submission.description}
+
+            ### Game Details
+            - **Genre:** ${submission.genre || 'Not specified'}
+            - **Number of Players:** ${submission.players || 'Not specified'}
+            - **Development Difficulty:** ${submission.difficulty || 'Not specified'}
+
+            ### Key Features
+            ${submission.features || 'No specific features listed'}
+
+            ---
+
+            **Submission Date:** ${timestamp}
+
+            ### Review Process
+            - [ ] Initial review by @BorDevTech
+            - [ ] Assign to @copilot for implementation consideration
+            - [ ] Add to development backlog if approved
+
+            *This issue was created automatically from a game idea submission.*
+            `;
+
+            // Create the issue
+            const issue = await github.rest.issues.create({
+              owner,
+              repo,
+              title: issueTitle,
+              body: issueBody,
+              labels: ['game-idea', 'needs-review'],
+              assignees: ['BorDevTech']
+            });
+
+            console.log(`Created issue #${issue.data.number}: ${issueTitle}`);
+            
+            // Add initial notification comment
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: issue.data.number,
+              body: `👋 Thank you for submitting this game idea! 
+              
+              **Review Process:**
+              1. @BorDevTech will review this submission for feasibility and alignment with project goals
+              2. Once approved, the issue will be labeled with 'reviewed' and automatically assigned to @copilot
+              3. @copilot will evaluate for technical implementation and add to the development backlog
+              
+              Please be patient as we review your submission. We appreciate your contribution to our games project!
+              
+              *This comment was posted automatically by the game submission workflow.*`
+            });
+
+  # Handle approved submissions (when labeled as 'reviewed')
+  process-reviewed-submission:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'issues' && contains(github.event.issue.labels.*.name, 'game-idea') && contains(github.event.issue.labels.*.name, 'reviewed')
+    
+    steps:
+      - name: Reassign to copilot
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+            const issueNumber = context.issue.number;
+            
+            try {
+              // Remove the 'needs-review' label if present
+              await github.rest.issues.removeLabel({
+                owner,
+                repo,
+                issue_number: issueNumber,
+                name: 'needs-review'
+              });
+            } catch (error) {
+              console.log('Label needs-review not found or already removed');
+            }
+            
+            // Add the 'approved' label
+            await github.rest.issues.addLabels({
+              owner,
+              repo,
+              issue_number: issueNumber,
+              labels: ['approved']
+            });
+            
+            // Get current assignees
+            const issue = await github.rest.issues.get({
+              owner,
+              repo,
+              issue_number: issueNumber
+            });
+            
+            // Add copilot as assignee (keeping existing assignees)
+            const currentAssignees = issue.data.assignees.map(assignee => assignee.login);
+            const newAssignees = [...new Set([...currentAssignees, 'copilot'])];
+            
+            await github.rest.issues.update({
+              owner,
+              repo,
+              issue_number: issueNumber,
+              assignees: newAssignees
+            });
+            
+            // Add a comment about the workflow
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: issueNumber,
+              body: `🤖 This game idea has been reviewed and approved! @copilot has been assigned for implementation consideration.
+              
+              **Next steps:**
+              - Evaluate technical feasibility
+              - Estimate development effort
+              - Add to development backlog if suitable
+              
+              *This comment was posted automatically by the game submission workflow.*`
+            });
+            
+            console.log(`Successfully processed game submission issue #${issueNumber}`);

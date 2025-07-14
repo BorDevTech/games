@@ -85,27 +85,63 @@ const SubmitGamePage: React.FC = () => {
   };
 
   const submitToGitHub = async (submission: GameSubmission): Promise<boolean> => {
-    // In a real implementation, this would make an API call to create a GitHub issue
-    // For now, we'll simulate the submission
     try {
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // Store submission locally for now
-      const existingSubmissions = JSON.parse(localStorage.getItem('gameSubmissions') || '[]');
-      const newSubmission = {
-        ...submission,
-        id: Date.now(),
-        submittedAt: new Date().toISOString(),
-        status: 'pending'
-      };
-      existingSubmissions.push(newSubmission);
-      localStorage.setItem('gameSubmissions', JSON.stringify(existingSubmissions));
-      
+      // Use GitHub repository dispatch to trigger a workflow
+      // This is more secure than using API directly from client
+      const response = await fetch('https://api.github.com/repos/BorDevTech/games/dispatches', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/vnd.github.v3+json',
+          // In production, this would use a webhook service or be proxied through a secure endpoint
+          'Authorization': `token ${process.env.NEXT_PUBLIC_GITHUB_WEBHOOK_TOKEN || ''}`
+        },
+        body: JSON.stringify({
+          event_type: 'game-submission',
+          client_payload: {
+            submission: submission,
+            timestamp: new Date().toISOString()
+          }
+        })
+      });
+
+      if (!response.ok) {
+        // Fallback to local storage if GitHub API is not available
+        console.log('GitHub API not available, storing locally');
+        const existingSubmissions = JSON.parse(localStorage.getItem('gameSubmissions') || '[]');
+        const newSubmission = {
+          ...submission,
+          id: Date.now(),
+          submittedAt: new Date().toISOString(),
+          status: 'pending'
+        };
+        existingSubmissions.push(newSubmission);
+        localStorage.setItem('gameSubmissions', JSON.stringify(existingSubmissions));
+        return true;
+      }
+
+      console.log('Game submission dispatched to GitHub Actions');
       return true;
+
     } catch (error) {
       console.error('Failed to submit game idea:', error);
-      return false;
+      
+      // Fallback to local storage
+      try {
+        const existingSubmissions = JSON.parse(localStorage.getItem('gameSubmissions') || '[]');
+        const newSubmission = {
+          ...submission,
+          id: Date.now(),
+          submittedAt: new Date().toISOString(),
+          status: 'pending'
+        };
+        existingSubmissions.push(newSubmission);
+        localStorage.setItem('gameSubmissions', JSON.stringify(existingSubmissions));
+        return true;
+      } catch (storageError) {
+        console.error('Failed to store submission locally:', storageError);
+        return false;
+      }
     }
   };
 
