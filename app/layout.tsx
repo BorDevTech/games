@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
+import { ChakraProvider } from "@chakra-ui/react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Games Application",
-  description: "A Next.js games application built with TypeScript",
+  title: "GameHub - Your Ultimate Gaming Destination",
+  description: "Discover amazing games, connect with fellow gamers, and embark on epic adventures at GameHub.",
 };
 
 export default function RootLayout({
@@ -13,8 +14,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="antialiased">
-        {children}
+      <body>
+        <ChakraProvider>
+          {children}
+        </ChakraProvider>
       </body>
     </html>
   );
