@@ -23,11 +23,6 @@ import {
   useColorModeValue,
   useToast,
   Divider,
-  Tabs,
-  TabList,
-  TabPanels,
-  Tab,
-  TabPanel,
   SimpleGrid
 } from '@chakra-ui/react';
 import { FaSignInAlt, FaUserPlus, FaGamepad, FaUser, FaUsers } from 'react-icons/fa';
@@ -309,7 +304,7 @@ const DualPlayerAuth: React.FC<DualPlayerAuthProps> = ({
     onProfileOpen();
   };
 
-  const renderPlayerCard = (playerNum: 1 | 2, player: Player | null, playerData: any) => (
+  const renderPlayerCard = (playerNum: 1 | 2, player: Player | null, playerData: { isAuthenticated: boolean; username: string; } | null) => (
     <Box 
       p={4} 
       bg={cardBg} 
