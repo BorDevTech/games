@@ -104,7 +104,7 @@ const GameHub: React.FC = () => {
       genre: "Classic/Strategy",
       rating: 4.9,
       players: "1-2 Players",
-      image: "https://via.placeholder.com/300x200/805AD5/ffffff?text=Tic-Tac-Toe",
+      image: "/tic-tac-toe-screenshot.png",
       price: "Free",
       description: "The classic game everyone loves! Play against a friend or challenge our smart AI bot."
     },
