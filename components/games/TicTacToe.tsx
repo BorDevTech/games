@@ -23,7 +23,7 @@ import {
 } from '@chakra-ui/react';
 import { FaRobot, FaUser } from 'react-icons/fa';
 import GameStats from '@/components/profile/GameStats';
-import PlayerAuth from '@/components/auth/PlayerAuth';
+import DualPlayerAuth from '@/components/auth/DualPlayerAuth';
 
 type CellValue = 'X' | 'O' | null;
 type GameBoard = CellValue[];
@@ -48,9 +48,8 @@ const TicTacToe: React.FC = () => {
   const [winner, setWinner] = useState<Player | 'draw' | null>(null);
   
   // Player management
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  const [currentUser, setCurrentUser] = useState<string>('');
-  const [player1Name, setPlayer1Name] = useState<string>('Player 1');
+  const [player1, setPlayer1] = useState<{ isAuthenticated: boolean; username: string; } | null>(null);
+  const [player2, setPlayer2] = useState<{ isAuthenticated: boolean; username: string; } | null>(null);
   
   // UI state
   const { isOpen, onOpen, onClose } = useDisclosure();
@@ -120,8 +119,8 @@ const TicTacToe: React.FC = () => {
   const saveGameResult = useCallback((result: Player | 'draw' | null) => {
     const gameResult: GameResult = {
       winner: result,
-      player1: player1Name,
-      player2: gameMode === 'pvc' ? 'Bot' : 'Player 2',
+      player1: player1?.username || 'Player 1',
+      player2: gameMode === 'pvc' ? 'Bot' : (player2?.username || 'Player 2'),
       mode: gameMode,
       timestamp: new Date()
     };
@@ -130,14 +129,62 @@ const TicTacToe: React.FC = () => {
     existingResults.push(gameResult);
     localStorage.setItem('ticTacToeResults', JSON.stringify(existingResults));
 
+    // Update player stats if they are authenticated
+    if (player1?.isAuthenticated) {
+      updatePlayerStats(player1.username, result === 'X' ? 'win' : result === 'draw' ? 'draw' : 'loss');
+    }
+    
+    if (gameMode === 'pvp' && player2?.isAuthenticated) {
+      updatePlayerStats(player2.username, result === 'O' ? 'win' : result === 'draw' ? 'draw' : 'loss');
+    }
+
     // Show result toast
+    const winnerName = result === 'X' ? (player1?.username || 'Player 1') : 
+                     result === 'O' ? (gameMode === 'pvc' ? 'Bot' : (player2?.username || 'Player 2')) : null;
+                     
     toast({
-      title: result === 'draw' ? 'It\'s a Draw!' : `${result === 'X' ? player1Name : (gameMode === 'pvc' ? 'Bot' : 'Player 2')} Wins!`,
+      title: result === 'draw' ? 'It\'s a Draw!' : `${winnerName} Wins!`,
       status: result === 'draw' ? 'warning' : 'success',
       duration: 3000,
       isClosable: true,
     });
-  }, [player1Name, gameMode, toast]);
+  }, [player1, player2, gameMode, toast]);
+
+  // Update player statistics
+  const updatePlayerStats = useCallback((username: string, gameResult: 'win' | 'loss' | 'draw') => {
+    const players = JSON.parse(localStorage.getItem('players') || '[]');
+    const playerIndex = players.findIndex((p: any) => p.username === username);
+    
+    if (playerIndex >= 0) {
+      players[playerIndex].gamesPlayed += 1;
+      if (gameResult === 'win') {
+        players[playerIndex].gamesWon += 1;
+      }
+      localStorage.setItem('players', JSON.stringify(players));
+      
+      // Update current player data in localStorage
+      const currentPlayer1 = localStorage.getItem('currentPlayer1');
+      const currentPlayer2 = localStorage.getItem('currentPlayer2');
+      
+      if (currentPlayer1) {
+        const p1 = JSON.parse(currentPlayer1);
+        if (p1.username === username) {
+          p1.gamesPlayed += 1;
+          if (gameResult === 'win') p1.gamesWon += 1;
+          localStorage.setItem('currentPlayer1', JSON.stringify(p1));
+        }
+      }
+      
+      if (currentPlayer2) {
+        const p2 = JSON.parse(currentPlayer2);
+        if (p2.username === username) {
+          p2.gamesPlayed += 1;
+          if (gameResult === 'win') p2.gamesWon += 1;
+          localStorage.setItem('currentPlayer2', JSON.stringify(p2));
+        }
+      }
+    }
+  }, []);
 
   // Handle cell click
   const handleCellClick = (index: number) => {
@@ -206,8 +253,8 @@ const TicTacToe: React.FC = () => {
 
   // Get current player display name
   const getCurrentPlayerName = () => {
-    if (currentPlayer === 'X') return player1Name;
-    return gameMode === 'pvc' ? 'Bot' : 'Player 2';
+    if (currentPlayer === 'X') return player1?.username || 'Player 1';
+    return gameMode === 'pvc' ? 'Bot' : (player2?.username || 'Player 2');
   };
 
   // Setup phase
@@ -217,15 +264,15 @@ const TicTacToe: React.FC = () => {
         <Heading size="lg" textAlign="center">Tic-Tac-Toe Setup</Heading>
         
         {/* Authentication Component */}
-        <PlayerAuth 
-          isAuthenticated={isAuthenticated}
-          currentUser={currentUser}
-          onAuthChange={(auth, user) => {
-            setIsAuthenticated(auth);
-            setCurrentUser(user);
-            if (auth && user) {
-              setPlayer1Name(user);
-            }
+        <DualPlayerAuth 
+          gameMode={gameMode}
+          player1={player1}
+          player2={player2}
+          onPlayer1Change={(isAuth, username) => {
+            setPlayer1(isAuth ? { isAuthenticated: isAuth, username } : null);
+          }}
+          onPlayer2Change={(isAuth, username) => {
+            setPlayer2(isAuth ? { isAuthenticated: isAuth, username } : null);
           }}
         />
 
@@ -240,9 +287,16 @@ const TicTacToe: React.FC = () => {
             <option value="pvc">Player vs Computer</option>
           </Select>
 
-          {gameMode === 'pvp' && !isAuthenticated && (
+          {gameMode === 'pvp' && (!player1?.isAuthenticated || !player2?.isAuthenticated) && (
             <VStack spacing={2} w="full">
-              <Text fontSize="sm" color="gray.500">Offline Mode - Enter Player Names</Text>
+              <Text fontSize="sm" color="gray.500">
+                {!player1?.isAuthenticated && !player2?.isAuthenticated 
+                  ? "Both players can create accounts to save progress"
+                  : !player1?.isAuthenticated 
+                    ? "Player 1 can create an account to save progress"
+                    : "Player 2 can create an account to save progress"
+                }
+              </Text>
             </VStack>
           )}
         </VStack>
@@ -253,6 +307,7 @@ const TicTacToe: React.FC = () => {
           size="lg" 
           onClick={startNewGame}
           leftIcon={gameMode === 'pvc' ? <FaRobot /> : <FaUser />}
+          isDisabled={!player1 || (gameMode === 'pvp' && !player2)}
         >
           Start Game
         </Button>
@@ -294,7 +349,7 @@ const TicTacToe: React.FC = () => {
           >
             {winner === 'draw' 
               ? 'It\'s a Draw!' 
-              : `${winner === 'X' ? player1Name : (gameMode === 'pvc' ? 'Bot' : 'Player 2')} Wins!`
+              : `${winner === 'X' ? (player1?.username || 'Player 1') : (gameMode === 'pvc' ? 'Bot' : (player2?.username || 'Player 2'))} Wins!`
             }
           </Badge>
         )}
@@ -303,11 +358,11 @@ const TicTacToe: React.FC = () => {
         <HStack spacing={8} fontSize="sm">
           <HStack>
             <Text fontWeight="semibold">X:</Text>
-            <Text>{player1Name}</Text>
+            <Text>{player1?.username || 'Player 1'}</Text>
           </HStack>
           <HStack>
             <Text fontWeight="semibold">O:</Text>
-            <Text>{gameMode === 'pvc' ? 'Bot' : 'Player 2'}</Text>
+            <Text>{gameMode === 'pvc' ? 'Bot' : (player2?.username || 'Player 2')}</Text>
           </HStack>
         </HStack>
       </VStack>
