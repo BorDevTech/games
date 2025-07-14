@@ -78,8 +78,26 @@ const GameHub: React.FC = () => {
   const textColor = useColorModeValue('gray.600', 'gray.200');
   const accentColor = useColorModeValue('purple.500', 'purple.300');
 
-  // Sample game data with proper TypeScript typing
-  const featuredGames: GameCard[] = [
+  // Function to check which games are actually implemented
+  const getImplementedGameIds = (): string[] => {
+    // Based on app/games/[id]/page.tsx, only these games are implemented
+    return ['01']; // Only Tic-Tac-Toe is implemented
+  };
+
+  // Function to map game ID to route ID
+  const getGameRouteId = (gameId: number): string | null => {
+    const gameRouteMap: { [key: number]: string } = {
+      1: '01', // Tic-Tac-Toe
+      // Add more mappings here when games are implemented
+      // 2: '02', // Cyber Quest 2024
+      // 3: '03', // Space Warrior  
+      // 4: '04', // Mystic Realms
+    };
+    return gameRouteMap[gameId] || null;
+  };
+
+  // All game data (for future use when games are implemented)
+  const allGames: GameCard[] = [
     {
       id: 1,
       title: "Tic-Tac-Toe",
@@ -121,6 +139,12 @@ const GameHub: React.FC = () => {
       description: "Build your kingdom in a magical world full of wonders."
     }
   ];
+
+  // Filter games to only show implemented ones
+  const featuredGames: GameCard[] = allGames.filter(game => {
+    const routeId = getGameRouteId(game.id);
+    return routeId && getImplementedGameIds().includes(routeId);
+  });
 
   const features: FeatureCard[] = [
     {
@@ -403,12 +427,13 @@ const GameHub: React.FC = () => {
                             leftIcon={<FaDownload />}
                             aria-label={`Download ${game.title}`}
                             onClick={() => {
-                              if (game.title === "Tic-Tac-Toe") {
-                                window.location.href = "/games/01";
+                              const routeId = getGameRouteId(game.id);
+                              if (routeId) {
+                                window.location.href = `/games/${routeId}`;
                               }
                             }}
                           >
-                            {game.title === "Tic-Tac-Toe" ? "Play Now" : "Get Game"}
+                            {game.price === "Free" ? "Play Now" : "Get Game"}
                           </Button>
                           <IconButton
                             aria-label={`Add ${game.title} to wishlist`}
