@@ -31,6 +31,12 @@ type Player = 'X' | 'O';
 type GameMode = 'pvp' | 'pvc';
 type GameState = 'setup' | 'playing' | 'finished';
 
+interface StoredPlayer {
+  username: string;
+  gamesPlayed: number;
+  gamesWon: number;
+}
+
 interface GameResult {
   winner: Player | 'draw' | null;
   player1: string;
@@ -115,6 +121,42 @@ const TicTacToe: React.FC = () => {
     return availableMoves[Math.floor(Math.random() * availableMoves.length)];
   }, []);
 
+  // Update player statistics
+  const updatePlayerStats = useCallback((username: string, gameResult: 'win' | 'loss' | 'draw') => {
+    const players: StoredPlayer[] = JSON.parse(localStorage.getItem('players') || '[]');
+    const playerIndex = players.findIndex((p: StoredPlayer) => p.username === username);
+    
+    if (playerIndex >= 0) {
+      players[playerIndex].gamesPlayed += 1;
+      if (gameResult === 'win') {
+        players[playerIndex].gamesWon += 1;
+      }
+      localStorage.setItem('players', JSON.stringify(players));
+      
+      // Update current player data in localStorage
+      const currentPlayer1 = localStorage.getItem('currentPlayer1');
+      const currentPlayer2 = localStorage.getItem('currentPlayer2');
+      
+      if (currentPlayer1) {
+        const p1 = JSON.parse(currentPlayer1);
+        if (p1.username === username) {
+          p1.gamesPlayed += 1;
+          if (gameResult === 'win') p1.gamesWon += 1;
+          localStorage.setItem('currentPlayer1', JSON.stringify(p1));
+        }
+      }
+      
+      if (currentPlayer2) {
+        const p2 = JSON.parse(currentPlayer2);
+        if (p2.username === username) {
+          p2.gamesPlayed += 1;
+          if (gameResult === 'win') p2.gamesWon += 1;
+          localStorage.setItem('currentPlayer2', JSON.stringify(p2));
+        }
+      }
+    }
+  }, []);
+
   // Save game result to localStorage (simple persistence)
   const saveGameResult = useCallback((result: Player | 'draw' | null) => {
     const gameResult: GameResult = {
@@ -148,43 +190,8 @@ const TicTacToe: React.FC = () => {
       duration: 3000,
       isClosable: true,
     });
-  }, [player1, player2, gameMode, toast]);
+  }, [player1, player2, gameMode, toast, updatePlayerStats]);
 
-  // Update player statistics
-  const updatePlayerStats = useCallback((username: string, gameResult: 'win' | 'loss' | 'draw') => {
-    const players = JSON.parse(localStorage.getItem('players') || '[]');
-    const playerIndex = players.findIndex((p: any) => p.username === username);
-    
-    if (playerIndex >= 0) {
-      players[playerIndex].gamesPlayed += 1;
-      if (gameResult === 'win') {
-        players[playerIndex].gamesWon += 1;
-      }
-      localStorage.setItem('players', JSON.stringify(players));
-      
-      // Update current player data in localStorage
-      const currentPlayer1 = localStorage.getItem('currentPlayer1');
-      const currentPlayer2 = localStorage.getItem('currentPlayer2');
-      
-      if (currentPlayer1) {
-        const p1 = JSON.parse(currentPlayer1);
-        if (p1.username === username) {
-          p1.gamesPlayed += 1;
-          if (gameResult === 'win') p1.gamesWon += 1;
-          localStorage.setItem('currentPlayer1', JSON.stringify(p1));
-        }
-      }
-      
-      if (currentPlayer2) {
-        const p2 = JSON.parse(currentPlayer2);
-        if (p2.username === username) {
-          p2.gamesPlayed += 1;
-          if (gameResult === 'win') p2.gamesWon += 1;
-          localStorage.setItem('currentPlayer2', JSON.stringify(p2));
-        }
-      }
-    }
-  }, []);
 
   // Handle cell click
   const handleCellClick = (index: number) => {
