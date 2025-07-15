@@ -283,6 +283,36 @@ const GameHub: React.FC = () => {
     }
   };
 
+  // Function to calculate string similarity (simple fuzzy matching)
+  const calculateSimilarity = (str1: string, str2: string): number => {
+    const s1 = str1.toLowerCase();
+    const s2 = str2.toLowerCase();
+    
+    // Exact match
+    if (s1 === s2) return 1;
+    
+    // Contains match
+    if (s1.includes(s2) || s2.includes(s1)) return 0.8;
+    
+    // Simple character similarity for common misspellings
+    const maxLen = Math.max(s1.length, s2.length);
+    let matches = 0;
+    const minLen = Math.min(s1.length, s2.length);
+    
+    for (let i = 0; i < minLen; i++) {
+      if (s1[i] === s2[i]) matches++;
+    }
+    
+    const similarity = matches / maxLen;
+    
+    // Boost similarity for common Tetris misspellings
+    if ((s1 === 'testris' && s2 === 'tetris') || (s1 === 'tetris' && s2 === 'testris')) {
+      return 0.9;
+    }
+    
+    return similarity;
+  };
+
   const handleSearchChange = (value: string) => {
     setSearchQuery(value);
     
@@ -293,11 +323,33 @@ const GameHub: React.FC = () => {
       return;
     }
 
-    // Search by game ID or name
-    const results = allGames.filter(game => 
-      game.title.toLowerCase().includes(value.toLowerCase()) ||
-      game.id.toString().includes(value)
-    );
+    // Search by game ID, exact name match, or fuzzy name match
+    const results = allGames.filter(game => {
+      const query = value.toLowerCase();
+      const title = game.title.toLowerCase();
+      
+      // Exact matches first
+      if (title.includes(query) || game.id.toString().includes(value)) {
+        return true;
+      }
+      
+      // Fuzzy matching for misspellings (threshold of 0.6)
+      const similarity = calculateSimilarity(query, title);
+      return similarity >= 0.6;
+    }).sort((a, b) => {
+      // Sort by relevance - exact matches first, then by similarity
+      const aExact = a.title.toLowerCase().includes(value.toLowerCase());
+      const bExact = b.title.toLowerCase().includes(value.toLowerCase());
+      
+      if (aExact && !bExact) return -1;
+      if (!aExact && bExact) return 1;
+      
+      // If both are fuzzy matches, sort by similarity
+      const aSimilarity = calculateSimilarity(value.toLowerCase(), a.title.toLowerCase());
+      const bSimilarity = calculateSimilarity(value.toLowerCase(), b.title.toLowerCase());
+      
+      return bSimilarity - aSimilarity;
+    });
     
     setSearchResults(results);
     setShowCreateOption(results.length === 0);
@@ -308,10 +360,33 @@ const GameHub: React.FC = () => {
     e.preventDefault();
     if (searchQuery.trim() === '') return;
     
-    const results = allGames.filter(game => 
-      game.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      game.id.toString().includes(searchQuery)
-    );
+    // Use the same fuzzy search logic as handleSearchChange
+    const results = allGames.filter(game => {
+      const query = searchQuery.toLowerCase();
+      const title = game.title.toLowerCase();
+      
+      // Exact matches first
+      if (title.includes(query) || game.id.toString().includes(searchQuery)) {
+        return true;
+      }
+      
+      // Fuzzy matching for misspellings (threshold of 0.6)
+      const similarity = calculateSimilarity(query, title);
+      return similarity >= 0.6;
+    }).sort((a, b) => {
+      // Sort by relevance - exact matches first, then by similarity
+      const aExact = a.title.toLowerCase().includes(searchQuery.toLowerCase());
+      const bExact = b.title.toLowerCase().includes(searchQuery.toLowerCase());
+      
+      if (aExact && !bExact) return -1;
+      if (!aExact && bExact) return 1;
+      
+      // If both are fuzzy matches, sort by similarity
+      const aSimilarity = calculateSimilarity(searchQuery.toLowerCase(), a.title.toLowerCase());
+      const bSimilarity = calculateSimilarity(searchQuery.toLowerCase(), b.title.toLowerCase());
+      
+      return bSimilarity - aSimilarity;
+    });
     
     if (results.length > 0) {
       // Navigate to first result if it's implemented
