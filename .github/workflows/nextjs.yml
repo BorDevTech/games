@@ -80,8 +80,10 @@ jobs:
             echo "Moving API routes for static build..."
             mkdir -p .api-backup
             if [ -d "app/api" ]; then
-              mv app/api/* .api-backup/ 2>/dev/null || true
-              echo "Moved $(ls .api-backup/ | wc -l) API route files"
+              # Use cp and then rm to handle directories properly
+              cp -r app/api/* .api-backup/ 2>/dev/null || true
+              rm -rf app/api/* 2>/dev/null || true
+              echo "Moved $(ls .api-backup/ 2>/dev/null | wc -l) API route files"
             fi
           fi
         env:
@@ -102,8 +104,8 @@ jobs:
           if [ "$STATIC_EXPORT" = "true" ] && [ -d ".api-backup" ]; then
             echo "Restoring API routes..."
             mkdir -p app/api
-            mv .api-backup/* app/api/ 2>/dev/null || true
-            rmdir .api-backup 2>/dev/null || true
+            cp -r .api-backup/* app/api/ 2>/dev/null || true
+            rm -rf .api-backup 2>/dev/null || true
             echo "API routes restored"
           fi
         env:

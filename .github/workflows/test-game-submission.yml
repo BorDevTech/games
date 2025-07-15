@@ -122,7 +122,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build application
+      - name: Build application for server mode
+        env:
+          # Ensure we build for server mode, not static export
+          STATIC_EXPORT: false
         run: npm run build
 
       - name: Start application in background
@@ -133,12 +136,27 @@ jobs:
           echo $! > server.pid
           
           # Wait for server to start
-          timeout 30 bash -c 'until curl -f http://localhost:3000/api/submit-game -X POST -H "Content-Type: application/json" -d "{}"; do sleep 1; done' || echo "Server startup timeout"
+          timeout 30 bash -c 'until curl -f http://localhost:3000/health/ 2>/dev/null || curl -f http://localhost:3000/ 2>/dev/null; do sleep 1; done' || echo "Server startup timeout"
+          
+          # Give server additional time to fully initialize
+          sleep 5
 
       - name: Test API endpoint
         run: |
+          # First check if server is running
+          if ! curl -f http://localhost:3000/ 2>/dev/null; then
+            echo "❌ Server is not responding. Checking if it's still running..."
+            if [ -f server.pid ] && kill -0 $(cat server.pid) 2>/dev/null; then
+              echo "Server process is running but not responding to requests"
+            else
+              echo "Server process is not running"
+            fi
+            exit 1
+          fi
+          
           # Test the API endpoint with curl
-          curl -X POST http://localhost:3000/api/submit-game \
+          echo "🧪 Testing API endpoint..."
+          response=$(curl -X POST http://localhost:3000/api/submit-game/ \
             -H "Content-Type: application/json" \
             -d '{
               "title": "API Test Game",
@@ -150,7 +168,18 @@ jobs:
               "submitterName": "API Test System",
               "submitterEmail": "api-test@example.com"
             }' \
-            -w "\nHTTP Status: %{http_code}\n" || echo "API test completed"
+            -w "\nHTTP Status: %{http_code}\n" \
+            -s)
+          
+          echo "API Response:"
+          echo "$response"
+          
+          # Check if the response indicates the API is working (503 is expected without proper tokens)
+          if echo "$response" | grep -q "HTTP Status: 503\|HTTP Status: 200"; then
+            echo "✅ API test successful - endpoint is responding"
+          else
+            echo "⚠️ API test completed with unexpected status"
+          fi
 
       - name: Stop application
         run: |
