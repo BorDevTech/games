@@ -19,10 +19,28 @@ import Tetris from '@/components/games/Tetris';
 const GamePage: React.FC = () => {
   const params = useParams();
   const router = useRouter();
-  const gameId = params.id as string;
+  const originalGameId = params.id as string;
   
   const bgColor = useColorModeValue('gray.50', 'gray.900');
   const cardBg = useColorModeValue('white', 'gray.800');
+  
+  // Handle common misspellings and aliases
+  const gameAliases: { [key: string]: string } = {
+    'testris': '03',  // Common misspelling of Tetris
+    'tetris': '03',   // Alternative direct name access
+    'tictactoe': '01', // Alternative direct name access  
+    'galaga': '02'    // Alternative direct name access
+  };
+  
+  // Check if we need to redirect to the correct ID
+  const correctId = gameAliases[originalGameId.toLowerCase()];
+  if (correctId) {
+    router.replace(`/games/${correctId}`);
+    return null; // Don't render anything while redirecting
+  }
+  
+  // Use the original game ID if no alias found
+  const gameId = originalGameId;
 
   // Game configuration based on ID
   const getGameComponent = () => {
