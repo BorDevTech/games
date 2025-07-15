@@ -55,6 +55,8 @@ interface Enemy extends GameObject {
   isDiving: boolean;
   health: number;
   points: number;
+  lastShot: number;
+  movingDown: boolean;
 }
 
 interface Bullet extends GameObject {
@@ -79,6 +81,8 @@ const Galaga: React.FC = () => {
   const ENEMY_ROWS = 5;
   const ENEMY_COLS = 10;
   const SHOOT_COOLDOWN = 150; // ms
+  const ENEMY_SHOOT_COOLDOWN = 2000; // ms
+  const ENEMY_MOVE_DOWN_SPEED = 0.5;
 
   // Game state
   const [gameState, setGameState] = useState<GameState>('setup');
@@ -89,21 +93,18 @@ const Galaga: React.FC = () => {
   const [enemies, setEnemies] = useState<Enemy[]>([]);
   const [bullets, setBullets] = useState<Bullet[]>([]);
   const [wave, setWave] = useState(1);
+  const [waveCompleteToastShown, setWaveCompleteToastShown] = useState(false);
 
   // UI state
   const { isOpen, onOpen, onClose } = useDisclosure();
   const toast = useToast();
   const gameLoopRef = useRef<NodeJS.Timeout | null>(null);
   const keysRef = useRef<Set<string>>(new Set());
+  const gameAreaRef = useRef<HTMLDivElement>(null);
 
   // Theme colors
   const gameAreaBg = useColorModeValue('gray.900', 'black');
   const playerColor = useColorModeValue('cyan.300', 'cyan.400');
-  const enemyColors = {
-    galaga: useColorModeValue('red.400', 'red.300'),
-    bee: useColorModeValue('yellow.400', 'yellow.300'),
-    butterfly: useColorModeValue('purple.400', 'purple.300')
-  };
 
   // Create enemy formation
   const createEnemyFormation = useCallback((): Enemy[] => {
@@ -142,7 +143,9 @@ const Galaga: React.FC = () => {
           formationY: y,
           isDiving: false,
           health,
-          points
+          points,
+          lastShot: 0,
+          movingDown: false
         });
       }
     }
@@ -201,25 +204,29 @@ const Galaga: React.FC = () => {
     setEnemies(createEnemyFormation());
     setBullets([]);
     setWave(1);
+    setWaveCompleteToastShown(false);
   }, [playerMode, GAME_WIDTH, GAME_HEIGHT, createEnemyFormation]);
 
-  // Handle keyboard input
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      keysRef.current.add(e.key.toLowerCase());
-    };
+  // Handle keyboard input - focused on game area to prevent page scroll
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    // Game control keys - prevent default behavior to avoid page scrolling
+    const gameKeys = ['a', 'd', 'w', 'arrowleft', 'arrowright', 'arrowup'];
+    const key = e.key.toLowerCase();
+    
+    if (gameKeys.includes(key)) {
+      e.preventDefault();
+      keysRef.current.add(key);
+    }
+  }, []);
 
-    const handleKeyUp = (e: KeyboardEvent) => {
-      keysRef.current.delete(e.key.toLowerCase());
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
-
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-    };
+  const handleKeyUp = useCallback((e: React.KeyboardEvent) => {
+    const gameKeys = ['a', 'd', 'w', 'arrowleft', 'arrowright', 'arrowup'];
+    const key = e.key.toLowerCase();
+    
+    if (gameKeys.includes(key)) {
+      e.preventDefault();
+      keysRef.current.delete(key);
+    }
   }, []);
 
   // Process input and update players
@@ -317,6 +324,52 @@ const Galaga: React.FC = () => {
     });
   }, [GAME_HEIGHT]);
 
+  // Update enemies - movement and shooting
+  const updateEnemies = useCallback(() => {
+    const now = Date.now();
+    
+    setEnemies(prevEnemies => {
+      return prevEnemies.map(enemy => {
+        if (!enemy.active) return enemy;
+        
+        let newY = enemy.position.y;
+        let newMovingDown = enemy.movingDown;
+        
+        // Start moving down after some time in wave
+        if (wave > 1 || now > 10000) { // Move down after 10 seconds or in later waves
+          newMovingDown = true;
+          newY += ENEMY_MOVE_DOWN_SPEED;
+        }
+        
+        // Enemy shooting logic - random chance for enemies to shoot
+        if (now - enemy.lastShot > ENEMY_SHOOT_COOLDOWN && Math.random() < 0.0005) {
+          setBullets(prev => [...prev, {
+            id: `enemy-bullet-${now}-${enemy.id}`,
+            position: { x: enemy.position.x + enemy.width / 2 - 2, y: enemy.position.y + enemy.height },
+            width: 4,
+            height: 10,
+            active: true,
+            velocity: { x: 0, y: BULLET_SPEED },
+            owner: 'enemy'
+          }]);
+          
+          return {
+            ...enemy,
+            position: { ...enemy.position, y: newY },
+            movingDown: newMovingDown,
+            lastShot: now
+          };
+        }
+        
+        return {
+          ...enemy,
+          position: { ...enemy.position, y: newY },
+          movingDown: newMovingDown
+        };
+      });
+    });
+  }, [wave, ENEMY_MOVE_DOWN_SPEED, ENEMY_SHOOT_COOLDOWN, BULLET_SPEED]);
+
   // Check collisions
   const checkCollisions = useCallback(() => {
     setBullets(prevBullets => {
@@ -328,6 +381,7 @@ const Galaga: React.FC = () => {
         setPlayers(prevPlayers => {
           return prevPlayers.map(player => {
             let newScore = player.score;
+            let newLives = player.lives;
             
             // Check player bullets hitting enemies
             bulletsToKeep.forEach(bullet => {
@@ -353,7 +407,30 @@ const Galaga: React.FC = () => {
               }
             });
             
-            return { ...player, score: newScore };
+            // Check enemy bullets hitting players
+            bulletsToKeep.forEach(bullet => {
+              if (bullet.owner === 'enemy' && bullet.active &&
+                  bullet.position.x < player.position.x + player.width &&
+                  bullet.position.x + bullet.width > player.position.x &&
+                  bullet.position.y < player.position.y + player.height &&
+                  bullet.position.y + bullet.height > player.position.y) {
+                
+                // Player hit by enemy bullet
+                bullet.active = false;
+                newLives -= 1;
+              }
+            });
+            
+            // Check if enemies reached player level
+            enemiesToKeep.forEach(enemy => {
+              if (enemy.active && 
+                  enemy.position.y + enemy.height >= player.position.y) {
+                // Enemy reached player - game over
+                newLives = 0;
+              }
+            });
+            
+            return { ...player, score: newScore, lives: newLives };
           });
         });
         
@@ -394,13 +471,15 @@ const Galaga: React.FC = () => {
   const gameLoop = useCallback(() => {
     processInput();
     updateBullets();
+    updateEnemies();
     checkCollisions();
     
     // Check win condition
     setEnemies(prevEnemies => {
       const activeEnemies = prevEnemies.filter(enemy => enemy.active);
-      if (activeEnemies.length === 0) {
+      if (activeEnemies.length === 0 && !waveCompleteToastShown) {
         // Wave completed
+        setWaveCompleteToastShown(true);
         toast({
           title: `Wave ${wave} Complete!`,
           status: 'success',
@@ -412,6 +491,7 @@ const Galaga: React.FC = () => {
         setTimeout(() => {
           setWave(prev => prev + 1);
           setEnemies(createEnemyFormation());
+          setWaveCompleteToastShown(false);
         }, 2000);
       }
       return prevEnemies;
@@ -428,7 +508,7 @@ const Galaga: React.FC = () => {
       }
       return prevPlayers;
     });
-  }, [processInput, updateBullets, checkCollisions, wave, toast, createEnemyFormation, saveGameResult]);
+  }, [processInput, updateBullets, updateEnemies, checkCollisions, wave, waveCompleteToastShown, toast, createEnemyFormation, saveGameResult]);
 
   // Start/stop game loop
   useEffect(() => {
@@ -453,6 +533,10 @@ const Galaga: React.FC = () => {
     initializeGame();
     setGameState('playing');
     onClose();
+    // Focus the game area to enable keyboard controls and prevent page scrolling
+    setTimeout(() => {
+      gameAreaRef.current?.focus();
+    }, 100);
   };
 
   // Pause/Resume game
@@ -532,6 +616,7 @@ const Galaga: React.FC = () => {
 
       {/* Game area */}
       <Box
+        ref={gameAreaRef}
         width={GAME_WIDTH}
         height={GAME_HEIGHT}
         bg={gameAreaBg}
@@ -540,6 +625,16 @@ const Galaga: React.FC = () => {
         borderColor="gray.600"
         borderRadius="md"
         overflow="hidden"
+        tabIndex={0}
+        onKeyDown={handleKeyDown}
+        onKeyUp={handleKeyUp}
+        outline="none"
+        _focus={{
+          borderColor: "blue.400",
+          boxShadow: "0 0 0 2px rgba(66, 153, 225, 0.6)"
+        }}
+        cursor="pointer"
+        onClick={() => gameAreaRef.current?.focus()}
       >
         {/* Game state overlay */}
         {gameState === 'setup' && (
@@ -604,9 +699,13 @@ const Galaga: React.FC = () => {
             top={`${enemy.position.y}px`}
             width={`${enemy.width}px`}
             height={`${enemy.height}px`}
-            bg={enemyColors[enemy.type]}
-            borderRadius="sm"
-          />
+            display="flex"
+            alignItems="center"
+            justifyContent="center"
+            fontSize="24px"
+          >
+            {enemy.type === 'galaga' ? '👾' : enemy.type === 'butterfly' ? '🛸' : '🤖'}
+          </Box>
         ))}
 
         {/* Render bullets */}
@@ -635,6 +734,9 @@ const Galaga: React.FC = () => {
             <Text>Player 2: ←/→ to move, ↑ to shoot</Text>
           </VStack>
         )}
+        <Text fontSize="xs" color="gray.400">
+          Click the game area to focus for keyboard controls
+        </Text>
       </VStack>
 
       {/* Game setup modal */}
