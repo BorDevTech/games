@@ -84,30 +84,27 @@ const SubmitGamePage: React.FC = () => {
     setSubmission(prev => ({ ...prev, [field]: value }));
   };
 
-  const submitToGitHub = async (submission: GameSubmission): Promise<boolean> => {
+  const submitToAPI = async (submission: GameSubmission): Promise<boolean> => {
     try {
-      // Use GitHub repository dispatch to trigger a workflow
-      // This is more secure than using API directly from client
-      const response = await fetch('https://api.github.com/repos/BorDevTech/games/dispatches', {
+      // Submit to our secure API route instead of directly to GitHub
+      const response = await fetch('/api/submit-game', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'application/vnd.github.v3+json',
-          // In production, this would use a webhook service or be proxied through a secure endpoint
-          'Authorization': `token ${process.env.NEXT_PUBLIC_GITHUB_WEBHOOK_TOKEN || ''}`
         },
-        body: JSON.stringify({
-          event_type: 'game-submission',
-          client_payload: {
-            submission: submission,
-            timestamp: new Date().toISOString()
-          }
-        })
+        body: JSON.stringify(submission)
       });
 
-      if (!response.ok) {
-        // Fallback to local storage if GitHub API is not available
-        console.log('GitHub API not available, storing locally');
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        console.log('Game submission processed successfully');
+        return true;
+      }
+
+      // If the API indicates fallback is needed or there's an error
+      if (result.fallback) {
+        console.log('API unavailable, storing locally');
         const existingSubmissions = JSON.parse(localStorage.getItem('gameSubmissions') || '[]');
         const newSubmission = {
           ...submission,
@@ -120,8 +117,9 @@ const SubmitGamePage: React.FC = () => {
         return true;
       }
 
-      console.log('Game submission dispatched to GitHub Actions');
-      return true;
+      // API returned an error
+      console.error('API error:', result.error);
+      return false;
 
     } catch (error) {
       console.error('Failed to submit game idea:', error);
@@ -163,7 +161,7 @@ const SubmitGamePage: React.FC = () => {
     setIsSubmitting(true);
     
     try {
-      const success = await submitToGitHub(submission);
+      const success = await submitToAPI(submission);
       
       if (success) {
         setIsSubmitted(true);
