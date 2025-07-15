@@ -88,16 +88,16 @@ const GameHub: React.FC = () => {
   // Function to check which games are actually implemented
   const getImplementedGameIds = (): string[] => {
     // Based on app/games/[id]/page.tsx, these games are implemented
-    return ['01', '03']; // Tic-Tac-Toe and Tetris are implemented
+    return ['01', '02', '03']; // Tic-Tac-Toe, Galaga, and Tetris are implemented
   };
 
   // Function to map game ID to route ID
   const getGameRouteId = (gameId: number): string | null => {
     const gameRouteMap: { [key: number]: string } = {
       1: '01', // Tic-Tac-Toe
+      2: '02', // Galaga
       3: '03', // Tetris
       // Add more mappings here when games are implemented
-      // 2: '02', // Galaga (reserved)
       // 4: '04', // Cyber Quest 2024
       // 5: '05', // Space Warrior  
       // 6: '06', // Mystic Realms
@@ -116,6 +116,16 @@ const GameHub: React.FC = () => {
       image: "/tic-tac-toe-screenshot.png",
       price: "Free",
       description: "The classic game everyone loves! Play against a friend or challenge our smart AI bot."
+    },
+    {
+      id: 2,
+      title: "Galaga",
+      genre: "Action/Arcade",
+      rating: 4.8,
+      players: "1-2 Players",
+      image: "https://via.placeholder.com/300x200/4F46E5/ffffff?text=Galaga",
+      price: "Free",
+      description: "Classic arcade space shooter! Defend Earth from the alien Galaga fleet in this retro action game."
     },
     {
       id: 3,
