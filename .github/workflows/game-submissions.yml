@@ -8,6 +8,9 @@ on:
   issues:
     types: [labeled]
 
+permissions:
+  issues: write
+
 jobs:
   # Handle new game submissions from the form
   create-game-submission-issue:
