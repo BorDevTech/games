@@ -73,7 +73,7 @@ The test submission follows the documented workflow:
 2. **Issue Creation** → Creates GitHub issue with proper labels
 3. **Assignment** → Assigns to @BorDevTech initially
 4. **Review Process** → Ready for "reviewed" label testing
-5. **Auto-Assignment** → Will assign to @copilot when reviewed
+5. **Auto-Assignment** → Will assign to @Copilot when reviewed
 
 ## Test Execution
 
@@ -101,7 +101,7 @@ To verify the implementation works:
 
 1. **Check Issues Tab** - Look for test submission issues created
 2. **Add "reviewed" Label** - Test the automatic workflow
-3. **Verify Assignment** - Confirm @copilot gets assigned automatically
+3. **Verify Assignment** - Confirm @Copilot gets assigned automatically
 4. **Check Actions** - Review workflow execution logs
 
 ## Environment Requirements

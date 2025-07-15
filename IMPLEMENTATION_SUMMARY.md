@@ -110,7 +110,7 @@ GITHUB_TOKEN                   # Fallback (GitHub Actions)
 3. **Issue Creation** → Automated GitHub issue
 4. **Label Assignment** → `game-idea` + `needs-review`
 5. **Review Process** → @BorDevTech assignment
-6. **Approval Workflow** → Auto-assign to @copilot
+6. **Approval Workflow** → Auto-assign to @Copilot
 
 #### **Alternative Workflows**
 - External webhook integration
