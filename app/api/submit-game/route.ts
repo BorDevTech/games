@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
 
     // Use GitHub repository dispatch to trigger a workflow
     // This uses a server-side token that's not exposed to the frontend
-    const githubToken = process.env.GITHUB_TOKEN || process.env.GITHUB_WEBHOOK_TOKEN;
+    const githubToken = process.env.GAME_SUBMISSION_TOKEN || process.env.GITHUB_WEBHOOK_TOKEN;
     
     if (!githubToken) {
       console.log('GitHub token not available, submission will need to be handled manually');
