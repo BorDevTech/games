@@ -13,8 +13,8 @@ import {
 } from '@chakra-ui/react';
 import { useParams, useRouter } from 'next/navigation';
 import TicTacToe from '@/components/games/TicTacToe';
-import Galaga from '@/components/games/Galaga';
-import Tetris from '@/components/games/Tetris';
+import Galaga from '@/components/games/Galaga'; 
+import Tetris from '@/components/games/Tetris'; 
 
 const GamePage: React.FC = () => {
   const params = useParams();
@@ -30,9 +30,9 @@ const GamePage: React.FC = () => {
       case '01':
         return <TicTacToe />;
       case '02':
-        return <Galaga />;
+        return <Galaga />; 
       case '03':
-        return <Tetris />;
+        return <Tetris />; 
       default:
         return (
           <VStack spacing={6} textAlign="center">
@@ -51,9 +51,9 @@ const GamePage: React.FC = () => {
       case '01':
         return 'Tic-Tac-Toe';
       case '02':
-        return 'Galaga';
+        return 'Galaga'; 
       case '03':
-        return 'Tetris';
+        return 'Tetris'; 
       default:
         return 'Unknown Game';
     }

@@ -88,19 +88,20 @@ const GameHub: React.FC = () => {
   // Function to check which games are actually implemented
   const getImplementedGameIds = (): string[] => {
     // Based on app/games/[id]/page.tsx, these games are implemented
-    return ['01', '02', '03']; // Tic-Tac-Toe, Galaga, and Tetris are implemented
+ 
+    return ['01', '02', '03'];  
   };
 
   // Function to map game ID to route ID
   const getGameRouteId = (gameId: number): string | null => {
     const gameRouteMap: { [key: number]: string } = {
       1: '01', // Tic-Tac-Toe
-      2: '02', // Galaga
+      2: '02', // Galaga 
       3: '03', // Tetris
       // Add more mappings here when games are implemented
       // 4: '04', // Cyber Quest 2024
       // 5: '05', // Space Warrior  
-      // 6: '06', // Mystic Realms
+      // 6: '06', // Mystic Realms 
     };
     return gameRouteMap[gameId] || null;
   };
@@ -128,7 +129,7 @@ const GameHub: React.FC = () => {
       description: "Classic arcade space shooter! Defend Earth from the alien Galaga fleet in this retro action game."
     },
     {
-      id: 3,
+      id: 3, 
       title: "Tetris",
       genre: "Puzzle/Strategy",
       rating: 4.8,
@@ -138,7 +139,7 @@ const GameHub: React.FC = () => {
       description: "Classic block puzzle game with timer, hardcore, and easy modes. Clear lines and achieve high scores!"
     },
     {
-      id: 4,
+      id: 4, 
       title: "Cyber Quest 2024",
       genre: "RPG/Adventure",
       rating: 4.8,
@@ -147,8 +148,8 @@ const GameHub: React.FC = () => {
       price: "$49.99",
       description: "An immersive cyberpunk adventure in a dystopian future."
     },
-    {
-      id: 5,
+    { 
+      id: 5, 
       title: "Space Warrior",
       genre: "Action/Shooter",
       rating: 4.6,
@@ -157,8 +158,8 @@ const GameHub: React.FC = () => {
       price: "$39.99",
       description: "Epic space battles across multiple galaxies."
     },
-    {
-      id: 6,
+    { 
+      id: 6, 
       title: "Mystic Realms",
       genre: "Fantasy/Strategy",
       rating: 4.9,
