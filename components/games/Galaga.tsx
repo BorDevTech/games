@@ -55,6 +55,8 @@ interface Enemy extends GameObject {
   isDiving: boolean;
   health: number;
   points: number;
+  lastShot: number;
+  movingDown: boolean;
 }
 
 interface Bullet extends GameObject {
@@ -79,6 +81,8 @@ const Galaga: React.FC = () => {
   const ENEMY_ROWS = 5;
   const ENEMY_COLS = 10;
   const SHOOT_COOLDOWN = 150; // ms
+  const ENEMY_SHOOT_COOLDOWN = 2000; // ms
+  const ENEMY_MOVE_DOWN_SPEED = 0.5;
 
   // Game state
   const [gameState, setGameState] = useState<GameState>('setup');
@@ -89,6 +93,7 @@ const Galaga: React.FC = () => {
   const [enemies, setEnemies] = useState<Enemy[]>([]);
   const [bullets, setBullets] = useState<Bullet[]>([]);
   const [wave, setWave] = useState(1);
+  const [waveCompleteToastShown, setWaveCompleteToastShown] = useState(false);
 
   // UI state
   const { isOpen, onOpen, onClose } = useDisclosure();
@@ -99,11 +104,6 @@ const Galaga: React.FC = () => {
   // Theme colors
   const gameAreaBg = useColorModeValue('gray.900', 'black');
   const playerColor = useColorModeValue('cyan.300', 'cyan.400');
-  const enemyColors = {
-    galaga: useColorModeValue('red.400', 'red.300'),
-    bee: useColorModeValue('yellow.400', 'yellow.300'),
-    butterfly: useColorModeValue('purple.400', 'purple.300')
-  };
 
   // Create enemy formation
   const createEnemyFormation = useCallback((): Enemy[] => {
@@ -142,7 +142,9 @@ const Galaga: React.FC = () => {
           formationY: y,
           isDiving: false,
           health,
-          points
+          points,
+          lastShot: 0,
+          movingDown: false
         });
       }
     }
@@ -201,6 +203,7 @@ const Galaga: React.FC = () => {
     setEnemies(createEnemyFormation());
     setBullets([]);
     setWave(1);
+    setWaveCompleteToastShown(false);
   }, [playerMode, GAME_WIDTH, GAME_HEIGHT, createEnemyFormation]);
 
   // Handle keyboard input
@@ -317,6 +320,52 @@ const Galaga: React.FC = () => {
     });
   }, [GAME_HEIGHT]);
 
+  // Update enemies - movement and shooting
+  const updateEnemies = useCallback(() => {
+    const now = Date.now();
+    
+    setEnemies(prevEnemies => {
+      return prevEnemies.map(enemy => {
+        if (!enemy.active) return enemy;
+        
+        let newY = enemy.position.y;
+        let newMovingDown = enemy.movingDown;
+        
+        // Start moving down after some time in wave
+        if (wave > 1 || now > 10000) { // Move down after 10 seconds or in later waves
+          newMovingDown = true;
+          newY += ENEMY_MOVE_DOWN_SPEED;
+        }
+        
+        // Enemy shooting logic - random chance for enemies to shoot
+        if (now - enemy.lastShot > ENEMY_SHOOT_COOLDOWN && Math.random() < 0.0005) {
+          setBullets(prev => [...prev, {
+            id: `enemy-bullet-${now}-${enemy.id}`,
+            position: { x: enemy.position.x + enemy.width / 2 - 2, y: enemy.position.y + enemy.height },
+            width: 4,
+            height: 10,
+            active: true,
+            velocity: { x: 0, y: BULLET_SPEED },
+            owner: 'enemy'
+          }]);
+          
+          return {
+            ...enemy,
+            position: { ...enemy.position, y: newY },
+            movingDown: newMovingDown,
+            lastShot: now
+          };
+        }
+        
+        return {
+          ...enemy,
+          position: { ...enemy.position, y: newY },
+          movingDown: newMovingDown
+        };
+      });
+    });
+  }, [wave, ENEMY_MOVE_DOWN_SPEED, ENEMY_SHOOT_COOLDOWN, BULLET_SPEED]);
+
   // Check collisions
   const checkCollisions = useCallback(() => {
     setBullets(prevBullets => {
@@ -328,6 +377,7 @@ const Galaga: React.FC = () => {
         setPlayers(prevPlayers => {
           return prevPlayers.map(player => {
             let newScore = player.score;
+            let newLives = player.lives;
             
             // Check player bullets hitting enemies
             bulletsToKeep.forEach(bullet => {
@@ -353,7 +403,30 @@ const Galaga: React.FC = () => {
               }
             });
             
-            return { ...player, score: newScore };
+            // Check enemy bullets hitting players
+            bulletsToKeep.forEach(bullet => {
+              if (bullet.owner === 'enemy' && bullet.active &&
+                  bullet.position.x < player.position.x + player.width &&
+                  bullet.position.x + bullet.width > player.position.x &&
+                  bullet.position.y < player.position.y + player.height &&
+                  bullet.position.y + bullet.height > player.position.y) {
+                
+                // Player hit by enemy bullet
+                bullet.active = false;
+                newLives -= 1;
+              }
+            });
+            
+            // Check if enemies reached player level
+            enemiesToKeep.forEach(enemy => {
+              if (enemy.active && 
+                  enemy.position.y + enemy.height >= player.position.y) {
+                // Enemy reached player - game over
+                newLives = 0;
+              }
+            });
+            
+            return { ...player, score: newScore, lives: newLives };
           });
         });
         
@@ -394,13 +467,15 @@ const Galaga: React.FC = () => {
   const gameLoop = useCallback(() => {
     processInput();
     updateBullets();
+    updateEnemies();
     checkCollisions();
     
     // Check win condition
     setEnemies(prevEnemies => {
       const activeEnemies = prevEnemies.filter(enemy => enemy.active);
-      if (activeEnemies.length === 0) {
+      if (activeEnemies.length === 0 && !waveCompleteToastShown) {
         // Wave completed
+        setWaveCompleteToastShown(true);
         toast({
           title: `Wave ${wave} Complete!`,
           status: 'success',
@@ -412,6 +487,7 @@ const Galaga: React.FC = () => {
         setTimeout(() => {
           setWave(prev => prev + 1);
           setEnemies(createEnemyFormation());
+          setWaveCompleteToastShown(false);
         }, 2000);
       }
       return prevEnemies;
@@ -428,7 +504,7 @@ const Galaga: React.FC = () => {
       }
       return prevPlayers;
     });
-  }, [processInput, updateBullets, checkCollisions, wave, toast, createEnemyFormation, saveGameResult]);
+  }, [processInput, updateBullets, updateEnemies, checkCollisions, wave, waveCompleteToastShown, toast, createEnemyFormation, saveGameResult]);
 
   // Start/stop game loop
   useEffect(() => {
@@ -604,9 +680,13 @@ const Galaga: React.FC = () => {
             top={`${enemy.position.y}px`}
             width={`${enemy.width}px`}
             height={`${enemy.height}px`}
-            bg={enemyColors[enemy.type]}
-            borderRadius="sm"
-          />
+            display="flex"
+            alignItems="center"
+            justifyContent="center"
+            fontSize="24px"
+          >
+            {enemy.type === 'galaga' ? '👾' : enemy.type === 'butterfly' ? '🛸' : '🤖'}
+          </Box>
         ))}
 
         {/* Render bullets */}
