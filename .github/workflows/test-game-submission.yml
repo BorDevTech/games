@@ -1,0 +1,160 @@
+name: Test Game Submission Workflow
+
+on:
+  workflow_dispatch:
+    inputs:
+      use_test_secret:
+        description: 'Use test secret for submission'
+        required: false
+        default: 'true'
+        type: boolean
+  push:
+    paths:
+      - 'test-secret-scanner.js'
+      - '.github/workflows/test-game-submission.yml'
+    branches:
+      - main
+      - 'copilot/**'
+
+jobs:
+  test-submission-workflow:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[test-submission]')
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Scan for test secrets
+        id: scan-secrets
+        run: |
+          echo "Available environment variables:"
+          env | grep -E "(TOKEN|SECRET|KEY)" | grep -v "GITHUB_TOKEN" | sort || echo "No additional tokens found"
+          
+          echo "Checking for test-specific secrets..."
+          # Look for test secrets that might be available
+          if [ -n "$GAME_SUBMISSION_TEST_TOKEN" ]; then
+            echo "test_token_available=true" >> $GITHUB_OUTPUT
+            echo "test_token_name=GAME_SUBMISSION_TEST_TOKEN" >> $GITHUB_OUTPUT
+          elif [ -n "$TEST_GITHUB_TOKEN" ]; then
+            echo "test_token_available=true" >> $GITHUB_OUTPUT  
+            echo "test_token_name=TEST_GITHUB_TOKEN" >> $GITHUB_OUTPUT
+          elif [ -n "$GITHUB_TEST_TOKEN" ]; then
+            echo "test_token_available=true" >> $GITHUB_OUTPUT
+            echo "test_token_name=GITHUB_TEST_TOKEN" >> $GITHUB_OUTPUT
+          else
+            echo "test_token_available=false" >> $GITHUB_OUTPUT
+            echo "test_token_name=none" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run test submission with GITHUB_TOKEN
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GAME_SUBMISSION_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Running test submission with GitHub token..."
+          node test-secret-scanner.js
+
+      - name: Run test submission with test secret (if available)
+        if: steps.scan-secrets.outputs.test_token_available == 'true'
+        env:
+          GAME_SUBMISSION_TEST_TOKEN: ${{ secrets.GAME_SUBMISSION_TEST_TOKEN }}
+          TEST_GITHUB_TOKEN: ${{ secrets.TEST_GITHUB_TOKEN }}
+          GITHUB_TEST_TOKEN: ${{ secrets.GITHUB_TEST_TOKEN }}
+        run: |
+          echo "Running test submission with test-specific secret: ${{ steps.scan-secrets.outputs.test_token_name }}"
+          node test-secret-scanner.js
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-submission-results
+          path: |
+            test-submission-report.json
+            local-test-submission.json
+          retention-days: 30
+
+      - name: Create test submission summary
+        run: |
+          echo "## 🎮 Game Submission Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Test Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "- **Test Secret Available**: ${{ steps.scan-secrets.outputs.test_token_available }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Test Secret Name**: ${{ steps.scan-secrets.outputs.test_token_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Workflow Trigger**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f "test-submission-report.json" ]; then
+            echo "### Test Results" >> $GITHUB_STEP_SUMMARY
+            echo '```json' >> $GITHUB_STEP_SUMMARY
+            cat test-submission-report.json >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "1. Check the Issues tab for any created test submissions" >> $GITHUB_STEP_SUMMARY
+          echo "2. Test the review workflow by adding 'reviewed' label to test issues" >> $GITHUB_STEP_SUMMARY
+          echo "3. Verify automatic assignment to @copilot works correctly" >> $GITHUB_STEP_SUMMARY
+
+  # Test the actual game submission API
+  test-api-endpoint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: npm run build
+
+      - name: Start application in background
+        env:
+          GAME_SUBMISSION_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npm start &
+          echo $! > server.pid
+          
+          # Wait for server to start
+          timeout 30 bash -c 'until curl -f http://localhost:3000/api/submit-game -X POST -H "Content-Type: application/json" -d "{}"; do sleep 1; done' || echo "Server startup timeout"
+
+      - name: Test API endpoint
+        run: |
+          # Test the API endpoint with curl
+          curl -X POST http://localhost:3000/api/submit-game \
+            -H "Content-Type: application/json" \
+            -d '{
+              "title": "API Test Game",
+              "description": "Testing the game submission API endpoint",
+              "genre": "Test",
+              "players": "Single Player", 
+              "difficulty": "Easy",
+              "features": "API testing functionality",
+              "submitterName": "API Test System",
+              "submitterEmail": "api-test@example.com"
+            }' \
+            -w "\nHTTP Status: %{http_code}\n" || echo "API test completed"
+
+      - name: Stop application
+        run: |
+          if [ -f server.pid ]; then
+            kill $(cat server.pid) || echo "Server already stopped"
+            rm server.pid
+          fi

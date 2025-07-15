@@ -38,3 +38,9 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
+
+# test results and reports
+test-*.json
+*-test-results.json
+local-test-submission.json
+comprehensive-test-results.json
