@@ -35,12 +35,44 @@ export interface Room {
   gameEndedAt?: Date;
 }
 
+// Types for localStorage serialization
+interface SerializedPlayer {
+  id: string;
+  username: string;
+  handCount: number;
+  isHost: boolean;
+  status: 'waiting' | 'playing' | 'spectating' | 'in_queue';
+  avatar?: string;
+  ready: boolean;
+  joinedAt: string;
+  lastActivity: string;
+}
+
+interface SerializedRoom {
+  id: string;
+  name: string;
+  type: 'public' | 'private';
+  hostId: string;
+  players: SerializedPlayer[];
+  maxPlayers: number;
+  inGame: boolean;
+  settings: GameSettings;
+  createdAt: string;
+  lastActivity: string;
+  gameStartedAt?: string;
+  gameEndedAt?: string;
+}
+
 class RoomManager {
   private rooms: Map<string, Room> = new Map();
   private readonly ROOM_TIMEOUT = 30 * 60 * 1000; // 30 minutes
   private readonly CLEANUP_INTERVAL = 5 * 60 * 1000; // 5 minutes
+  private readonly STORAGE_KEY = 'unolike_rooms';
   
   constructor() {
+    // Load rooms from localStorage
+    this.loadRooms();
+    
     // Start cleanup timer
     if (typeof window !== 'undefined') {
       setInterval(() => this.cleanupInactiveRooms(), this.CLEANUP_INTERVAL);
@@ -70,6 +102,7 @@ class RoomManager {
     };
     
     this.rooms.set(roomId, room);
+    this.saveRooms();
     return room;
   }
 
@@ -78,6 +111,7 @@ class RoomManager {
     const room = this.rooms.get(roomId.toUpperCase());
     if (room) {
       room.lastActivity = new Date();
+      this.saveRooms();
     }
     return room || null;
   }
@@ -113,6 +147,7 @@ class RoomManager {
 
     room.players.push(newPlayer);
     room.lastActivity = new Date();
+    this.saveRooms();
     
     return { success: true, room };
   }
@@ -137,6 +172,7 @@ class RoomManager {
     // If no players left, delete the room
     if (room.players.length === 0) {
       this.rooms.delete(roomId);
+      this.saveRooms();
       return { success: true, roomDeleted: true };
     }
 
@@ -146,6 +182,7 @@ class RoomManager {
       room.hostId = room.players[0].id;
     }
 
+    this.saveRooms();
     return { success: true, room };
   }
 
@@ -157,6 +194,7 @@ class RoomManager {
       if (player) {
         player.lastActivity = new Date();
         room.lastActivity = new Date();
+        this.saveRooms();
       }
     }
   }
@@ -188,6 +226,7 @@ class RoomManager {
       }
     });
 
+    this.saveRooms();
     return { success: true };
   }
 
@@ -212,6 +251,7 @@ class RoomManager {
     // If configured for auto-cleanup after game ends, we could delete room
     // For now, we'll keep the room alive for players to potentially start another game
 
+    this.saveRooms();
     return { success: true };
   }
 
@@ -235,6 +275,7 @@ class RoomManager {
 
     if (roomsToDelete.length > 0) {
       console.log(`Cleaned up ${roomsToDelete.length} inactive rooms`);
+      this.saveRooms();
     }
   }
 
@@ -272,6 +313,7 @@ class RoomManager {
 
     room.settings = { ...room.settings, ...settings };
     room.lastActivity = new Date();
+    this.saveRooms();
 
     return { success: true };
   }
@@ -286,6 +328,49 @@ class RoomManager {
       privateRooms: rooms.filter(r => r.type === 'private').length,
       activeGames: rooms.filter(r => r.inGame).length
     };
+  }
+
+  // Save rooms to localStorage
+  private saveRooms(): void {
+    if (typeof window === 'undefined') return;
+    
+    try {
+      const roomsArray = Array.from(this.rooms.entries()).map(([id, room]) => [id, room]);
+      localStorage.setItem(this.STORAGE_KEY, JSON.stringify(roomsArray));
+    } catch (error) {
+      console.warn('Failed to save rooms to localStorage:', error);
+    }
+  }
+
+  // Load rooms from localStorage
+  private loadRooms(): void {
+    if (typeof window === 'undefined') return;
+    
+    try {
+      const stored = localStorage.getItem(this.STORAGE_KEY);
+      if (stored) {
+        const roomsArray: [string, SerializedRoom][] = JSON.parse(stored);
+        this.rooms = new Map(roomsArray.map(([id, room]) => {
+          // Convert date strings back to Date objects
+          const convertedRoom: Room = {
+            ...room,
+            createdAt: new Date(room.createdAt),
+            lastActivity: new Date(room.lastActivity),
+            gameStartedAt: room.gameStartedAt ? new Date(room.gameStartedAt) : undefined,
+            gameEndedAt: room.gameEndedAt ? new Date(room.gameEndedAt) : undefined,
+            players: room.players.map((player: SerializedPlayer): Player => ({
+              ...player,
+              joinedAt: new Date(player.joinedAt),
+              lastActivity: new Date(player.lastActivity)
+            }))
+          };
+          return [id, convertedRoom];
+        }));
+      }
+    } catch (error) {
+      console.warn('Failed to load rooms from localStorage:', error);
+      this.rooms = new Map();
+    }
   }
 }
 
