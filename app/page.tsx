@@ -88,18 +88,19 @@ const GameHub: React.FC = () => {
   // Function to check which games are actually implemented
   const getImplementedGameIds = (): string[] => {
     // Based on app/games/[id]/page.tsx, these games are implemented
-    return ['01', '02']; // Tic-Tac-Toe and Tetris are implemented
+    return ['01', '03']; // Tic-Tac-Toe and Tetris are implemented
   };
 
   // Function to map game ID to route ID
   const getGameRouteId = (gameId: number): string | null => {
     const gameRouteMap: { [key: number]: string } = {
       1: '01', // Tic-Tac-Toe
-      2: '02', // Tetris
+      3: '03', // Tetris
       // Add more mappings here when games are implemented
-      // 3: '03', // Cyber Quest 2024
-      // 4: '04', // Space Warrior  
-      // 5: '05', // Mystic Realms
+      // 2: '02', // Galaga (reserved)
+      // 4: '04', // Cyber Quest 2024
+      // 5: '05', // Space Warrior  
+      // 6: '06', // Mystic Realms
     };
     return gameRouteMap[gameId] || null;
   };
@@ -117,7 +118,7 @@ const GameHub: React.FC = () => {
       description: "The classic game everyone loves! Play against a friend or challenge our smart AI bot."
     },
     {
-      id: 2,
+      id: 3,
       title: "Tetris",
       genre: "Puzzle/Strategy",
       rating: 4.8,
@@ -127,7 +128,7 @@ const GameHub: React.FC = () => {
       description: "Classic block puzzle game with timer, hardcore, and easy modes. Clear lines and achieve high scores!"
     },
     {
-      id: 3,
+      id: 4,
       title: "Cyber Quest 2024",
       genre: "RPG/Adventure",
       rating: 4.8,
@@ -137,7 +138,7 @@ const GameHub: React.FC = () => {
       description: "An immersive cyberpunk adventure in a dystopian future."
     },
     {
-      id: 4,
+      id: 5,
       title: "Space Warrior",
       genre: "Action/Shooter",
       rating: 4.6,
@@ -147,7 +148,7 @@ const GameHub: React.FC = () => {
       description: "Epic space battles across multiple galaxies."
     },
     {
-      id: 5,
+      id: 6,
       title: "Mystic Realms",
       genre: "Fantasy/Strategy",
       rating: 4.9,

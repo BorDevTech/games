@@ -28,7 +28,7 @@ const GamePage: React.FC = () => {
     switch (gameId) {
       case '01':
         return <TicTacToe />;
-      case '02':
+      case '03':
         return <Tetris />;
       default:
         return (
@@ -47,7 +47,7 @@ const GamePage: React.FC = () => {
     switch (gameId) {
       case '01':
         return 'Tic-Tac-Toe';
-      case '02':
+      case '03':
         return 'Tetris';
       default:
         return 'Unknown Game';
