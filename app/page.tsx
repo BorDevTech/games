@@ -89,7 +89,7 @@ const GameHub: React.FC = () => {
   const getImplementedGameIds = (): string[] => {
     // Based on app/games/[id]/page.tsx, these games are implemented
  
-    return ['01', '02', '03'];  
+    return ['01', '02', '03', '04'];  
   };
 
   // Function to map game ID to route ID
@@ -98,10 +98,11 @@ const GameHub: React.FC = () => {
       1: '01', // Tic-Tac-Toe
       2: '02', // Galaga 
       3: '03', // Tetris
+      4: '04', // UNO-Like Card Game
       // Add more mappings here when games are implemented
-      // 4: '04', // Cyber Quest 2024
-      // 5: '05', // Space Warrior  
-      // 6: '06', // Mystic Realms 
+      // 5: '05', // Cyber Quest 2024
+      // 6: '06', // Space Warrior  
+      // 7: '07', // Mystic Realms 
     };
     return gameRouteMap[gameId] || null;
   };
@@ -140,6 +141,16 @@ const GameHub: React.FC = () => {
     },
     {
       id: 4, 
+      title: "UNO-Like Card Game",
+      genre: "Strategy/Multiplayer",
+      rating: 4.9,
+      players: "2-8 Players",
+      image: "https://via.placeholder.com/300x200/E53E3E/ffffff?text=UNO-Like",
+      price: "Free",
+      description: "Classic UNO experience with more exciting features! Room-based multiplayer with dynamic features."
+    },
+    {
+      id: 5, 
       title: "Cyber Quest 2024",
       genre: "RPG/Adventure",
       rating: 4.8,
@@ -149,7 +160,7 @@ const GameHub: React.FC = () => {
       description: "An immersive cyberpunk adventure in a dystopian future."
     },
     { 
-      id: 5, 
+      id: 6, 
       title: "Space Warrior",
       genre: "Action/Shooter",
       rating: 4.6,
@@ -159,7 +170,7 @@ const GameHub: React.FC = () => {
       description: "Epic space battles across multiple galaxies."
     },
     { 
-      id: 6, 
+      id: 7, 
       title: "Mystic Realms",
       genre: "Fantasy/Strategy",
       rating: 4.9,
