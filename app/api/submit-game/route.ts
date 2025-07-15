@@ -25,7 +25,24 @@ export async function POST(request: NextRequest) {
 
     // Use GitHub repository dispatch to trigger a workflow
     // This uses a server-side token that's not exposed to the frontend
-    const githubToken = process.env.GAME_SUBMISSION_TOKEN || process.env.GITHUB_WEBHOOK_TOKEN;
+    // Check for test-specific tokens first, then fallback to general tokens
+    const githubToken = process.env.GAME_SUBMISSION_TEST_TOKEN || 
+                       process.env.TEST_GITHUB_TOKEN ||
+                       process.env.GITHUB_TEST_TOKEN ||
+                       process.env.GAME_SUBMISSION_TOKEN || 
+                       process.env.GITHUB_WEBHOOK_TOKEN ||
+                       process.env.GITHUB_TOKEN;
+    
+    // Log which token type is being used (for debugging)
+    if (process.env.GAME_SUBMISSION_TEST_TOKEN) {
+      console.log('Using GAME_SUBMISSION_TEST_TOKEN for submission');
+    } else if (process.env.TEST_GITHUB_TOKEN) {
+      console.log('Using TEST_GITHUB_TOKEN for submission');
+    } else if (process.env.GITHUB_TEST_TOKEN) {
+      console.log('Using GITHUB_TEST_TOKEN for submission');
+    } else if (githubToken) {
+      console.log('Using fallback token for submission');
+    }
     
     if (!githubToken) {
       console.log('GitHub token not available, submission will need to be handled manually');
