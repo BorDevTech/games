@@ -73,8 +73,41 @@ jobs:
             ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json', '**/yarn.lock') }}-
       - name: Install dependencies
         run: ${{ steps.detect-package-manager.outputs.manager }} ${{ steps.detect-package-manager.outputs.command }}
+      - name: Prepare for static build
+        run: |
+          echo "Preparing for static build (GitHub Pages)..."
+          if [ "$STATIC_EXPORT" = "true" ]; then
+            echo "Moving API routes for static build..."
+            mkdir -p .api-backup
+            if [ -d "app/api" ]; then
+              mv app/api/* .api-backup/ 2>/dev/null || true
+              echo "Moved $(ls .api-backup/ | wc -l) API route files"
+            fi
+          fi
+        env:
+          STATIC_EXPORT: true
       - name: Build with Next.js
-        run: ${{ steps.detect-package-manager.outputs.runner }} next build
+        run: STATIC_EXPORT=true ${{ steps.detect-package-manager.outputs.runner }} next build
+      - name: Verify static build output
+        run: |
+          echo "Verifying static build output..."
+          if [ ! -d "out" ]; then
+            echo "ERROR: Static build did not create 'out' directory"
+            exit 1
+          fi
+          echo "Static build successful. Files in out/:"
+          ls -la out/
+      - name: Restore API routes
+        run: |
+          if [ "$STATIC_EXPORT" = "true" ] && [ -d ".api-backup" ]; then
+            echo "Restoring API routes..."
+            mkdir -p app/api
+            mv .api-backup/* app/api/ 2>/dev/null || true
+            rmdir .api-backup 2>/dev/null || true
+            echo "API routes restored"
+          fi
+        env:
+          STATIC_EXPORT: true
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:

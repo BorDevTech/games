@@ -1,19 +1,15 @@
 import type { NextConfig } from "next";
 
+const isStaticExport = process.env.STATIC_EXPORT === 'true';
+
 const nextConfig: NextConfig = {
-  // Note: 'output: export' doesn't support API routes
-  // Remove this line to enable API routes for webhooks
-  // output: 'export',
+  // Enable static export for GitHub Pages when STATIC_EXPORT=true
+  ...(isStaticExport && {
+    output: 'export',
+    distDir: 'out'
+  }),
   
-  // Only apply trailing slash to non-API routes
-  async rewrites() {
-    return [
-      {
-        source: '/api/:path*',
-        destination: '/api/:path*',
-      },
-    ];
-  },
+  trailingSlash: true,
   
   images: {
     unoptimized: true
