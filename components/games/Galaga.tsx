@@ -100,6 +100,7 @@ const Galaga: React.FC = () => {
   const toast = useToast();
   const gameLoopRef = useRef<NodeJS.Timeout | null>(null);
   const keysRef = useRef<Set<string>>(new Set());
+  const gameAreaRef = useRef<HTMLDivElement>(null);
 
   // Theme colors
   const gameAreaBg = useColorModeValue('gray.900', 'black');
@@ -206,23 +207,26 @@ const Galaga: React.FC = () => {
     setWaveCompleteToastShown(false);
   }, [playerMode, GAME_WIDTH, GAME_HEIGHT, createEnemyFormation]);
 
-  // Handle keyboard input
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      keysRef.current.add(e.key.toLowerCase());
-    };
+  // Handle keyboard input - focused on game area to prevent page scroll
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    // Game control keys - prevent default behavior to avoid page scrolling
+    const gameKeys = ['a', 'd', 'w', 'arrowleft', 'arrowright', 'arrowup'];
+    const key = e.key.toLowerCase();
+    
+    if (gameKeys.includes(key)) {
+      e.preventDefault();
+      keysRef.current.add(key);
+    }
+  }, []);
 
-    const handleKeyUp = (e: KeyboardEvent) => {
-      keysRef.current.delete(e.key.toLowerCase());
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
-
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-    };
+  const handleKeyUp = useCallback((e: React.KeyboardEvent) => {
+    const gameKeys = ['a', 'd', 'w', 'arrowleft', 'arrowright', 'arrowup'];
+    const key = e.key.toLowerCase();
+    
+    if (gameKeys.includes(key)) {
+      e.preventDefault();
+      keysRef.current.delete(key);
+    }
   }, []);
 
   // Process input and update players
@@ -529,6 +533,10 @@ const Galaga: React.FC = () => {
     initializeGame();
     setGameState('playing');
     onClose();
+    // Focus the game area to enable keyboard controls and prevent page scrolling
+    setTimeout(() => {
+      gameAreaRef.current?.focus();
+    }, 100);
   };
 
   // Pause/Resume game
@@ -608,6 +616,7 @@ const Galaga: React.FC = () => {
 
       {/* Game area */}
       <Box
+        ref={gameAreaRef}
         width={GAME_WIDTH}
         height={GAME_HEIGHT}
         bg={gameAreaBg}
@@ -616,6 +625,16 @@ const Galaga: React.FC = () => {
         borderColor="gray.600"
         borderRadius="md"
         overflow="hidden"
+        tabIndex={0}
+        onKeyDown={handleKeyDown}
+        onKeyUp={handleKeyUp}
+        outline="none"
+        _focus={{
+          borderColor: "blue.400",
+          boxShadow: "0 0 0 2px rgba(66, 153, 225, 0.6)"
+        }}
+        cursor="pointer"
+        onClick={() => gameAreaRef.current?.focus()}
       >
         {/* Game state overlay */}
         {gameState === 'setup' && (
@@ -715,6 +734,9 @@ const Galaga: React.FC = () => {
             <Text>Player 2: ←/→ to move, ↑ to shoot</Text>
           </VStack>
         )}
+        <Text fontSize="xs" color="gray.400">
+          Click the game area to focus for keyboard controls
+        </Text>
       </VStack>
 
       {/* Game setup modal */}
