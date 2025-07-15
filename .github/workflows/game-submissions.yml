@@ -1,5 +1,5 @@
 env:
-  GITHUB_TOKEN: ${{ secrets.GH_GAME_SUBMISSION_TESTTOKEN }}
+  GAME_SUBMISSION_TOKEN: ${{ secrets.GH_GAME_SUBMISSION_TESTTOKEN }}
 
 name: Game Submission Workflow
 

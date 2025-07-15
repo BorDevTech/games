@@ -36,12 +36,12 @@ The system implements a webhook-based workflow for game idea submissions that:
 ## Setup Instructions
 
 ### 1. Repository Configuration
-No additional setup required - the system uses GitHub's built-in `GITHUB_TOKEN` which is automatically available in GitHub Actions.
+The system uses GitHub's built-in `GITHUB_TOKEN` for GitHub Actions API calls within the workflow, and a custom `GAME_SUBMISSION_TOKEN` for repository dispatch events from the web application.
 
 ### 2. Environment Variables
 For production deployment, configure the GitHub token as a server-side environment variable:
 ```bash
-GITHUB_TOKEN=your_github_token_here
+GAME_SUBMISSION_TOKEN=your_github_token_here
 # OR
 GITHUB_WEBHOOK_TOKEN=your_github_token_here
 ```
