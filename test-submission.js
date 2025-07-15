@@ -132,7 +132,7 @@ ${testSubmission.features || 'No specific features listed'}
 
 ### Review Process
 - [ ] Initial review by @BorDevTech
-- [ ] Assign to @copilot for implementation consideration
+- [ ] Assign to @Copilot for implementation consideration
 - [ ] Add to development backlog if approved
 
 *This issue was created automatically from a TEST game idea submission.*`,

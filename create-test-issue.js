@@ -47,7 +47,7 @@ ${submission.features || 'No specific features listed'}
 
 ### Review Process
 - [ ] Initial review by @BorDevTech
-- [ ] Assign to @copilot for implementation consideration
+- [ ] Assign to @Copilot for implementation consideration
 - [ ] Add to development backlog if approved
 
 ### Test Information
@@ -62,7 +62,7 @@ ${submission.features || 'No specific features listed'}
 **Instructions for @BorDevTech:**
 1. Review this test submission
 2. Add the \`reviewed\` label to trigger automation
-3. Verify that @copilot gets automatically assigned
+3. Verify that @Copilot gets automatically assigned
 4. Confirm the workflow completes successfully
 
 *This issue was created automatically from a game idea submission test.*`;
@@ -198,7 +198,7 @@ This issue was created to fulfill the requirements of issue #31: "Receive the ga
 **Workflow Verification Steps:**
 1. This issue demonstrates the complete game submission process
 2. @BorDevTech can now test the review workflow
-3. Adding the \`reviewed\` label should trigger automatic assignment to @copilot
+3. Adding the \`reviewed\` label should trigger automatic assignment to @Copilot
 4. The workflow automation should complete successfully
 
 **Implementation Details:**

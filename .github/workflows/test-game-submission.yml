@@ -104,7 +104,7 @@ jobs:
           echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
           echo "1. Check the Issues tab for any created test submissions" >> $GITHUB_STEP_SUMMARY
           echo "2. Test the review workflow by adding 'reviewed' label to test issues" >> $GITHUB_STEP_SUMMARY
-          echo "3. Verify automatic assignment to @copilot works correctly" >> $GITHUB_STEP_SUMMARY
+          echo "3. Verify automatic assignment to @Copilot works correctly" >> $GITHUB_STEP_SUMMARY
 
   # Test the actual game submission API
   test-api-endpoint:

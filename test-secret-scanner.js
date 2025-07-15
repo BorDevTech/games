@@ -232,7 +232,7 @@ ${testSubmission.features || 'No specific features listed'}
 
 ### Review Process
 - [ ] Initial review by @BorDevTech
-- [ ] Assign to @copilot for implementation consideration
+- [ ] Assign to @Copilot for implementation consideration
 - [ ] Add to development backlog if approved
 
 ### Test Verification
@@ -299,7 +299,7 @@ This issue was created by the test script to verify the game submission workflow
 
 **To complete the test:**
 1. @BorDevTech should review this submission
-2. Add the 'reviewed' label to trigger automatic assignment to @copilot
+2. Add the 'reviewed' label to trigger automatic assignment to @Copilot
 3. Verify the automated workflow completes successfully
 
 *This comment was added automatically by the test system.*`
@@ -421,7 +421,7 @@ async function runTestSubmission() {
   console.log('\n🔍 Next Steps for @BorDevTech:');
   console.log('1. Review the created test submission issue (if any)');
   console.log('2. Test the review workflow by adding "reviewed" label');
-  console.log('3. Verify @copilot gets automatically assigned');
+  console.log('3. Verify @Copilot gets automatically assigned');
   console.log('4. Confirm the complete workflow functions as expected');
   
   return results;

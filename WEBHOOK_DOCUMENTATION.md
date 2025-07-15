@@ -42,7 +42,7 @@ The system implements a webhook-based workflow for game idea submissions that:
 2. **Sends payload as JSON** via GitHub repository dispatch events
 3. **Processes webhook data** using GitHub Actions
 4. **Creates GitHub issues** automatically with proper labels and assignments
-5. **Automates assignment workflow** from @BorDevTech to @copilot after review
+5. **Automates assignment workflow** from @BorDevTech to @Copilot after review
 
 ## Architecture
 
@@ -62,7 +62,7 @@ The system implements a webhook-based workflow for game idea submissions that:
 - When @BorDevTech adds the `reviewed` label, the workflow automatically:
   - Removes `needs-review` label
   - Adds `approved` label  
-  - Assigns @copilot for implementation consideration
+  - Assigns @Copilot for implementation consideration
   - Posts automated comment explaining next steps
 
 ## Setup Instructions
@@ -203,7 +203,7 @@ Expected response:
 #### Step 5: Test Review Process
 1. Find a game submission issue with `needs-review` label
 2. Add the `reviewed` label to the issue
-3. Verify that @copilot is automatically assigned and the issue is relabeled
+3. Verify that @Copilot is automatically assigned and the issue is relabeled
 
 ### 4. Alternative Webhook Implementation
 
@@ -377,14 +377,14 @@ The system uses these labels for workflow management:
 - `game-idea`: Identifies issues created from game submissions
 - `needs-review`: Initial state requiring @BorDevTech review
 - `reviewed`: Added by @BorDevTech when approved
-- `approved`: Automatically added when reviewed, triggers @copilot assignment
+- `approved`: Automatically added when reviewed, triggers @Copilot assignment
 
 ## Workflow States
 
 1. **Submitted**: Issue created with `game-idea` and `needs-review` labels, assigned to @BorDevTech
 2. **Under Review**: @BorDevTech evaluates the submission
-3. **Approved**: @BorDevTech adds `reviewed` label, triggering automatic reassignment to @copilot
-4. **In Development**: @copilot evaluates for technical implementation
+3. **Approved**: @BorDevTech adds `reviewed` label, triggering automatic reassignment to @Copilot
+4. **In Development**: @Copilot evaluates for technical implementation
 
 ## Customization
 
@@ -430,18 +430,18 @@ curl -v -X POST http://localhost:3000/api/submit-game \
 - `404 Not Found`: Repository name is incorrect
 - `422 Unprocessable Entity`: Workflow file has syntax errors
 
-#### 2. Issues Not Auto-Assigning to @copilot
+#### 2. Issues Not Auto-Assigning to @Copilot
 
 **Problem**: Issues stay assigned to @BorDevTech even after adding `reviewed` label
 
 **Diagnostic Steps:**
 1. Check that issue has both `game-idea` and `reviewed` labels
-2. Verify @copilot has repository access
+2. Verify @Copilot has repository access
 3. Check workflow logs in Actions tab
 
 **Solutions:**
 - **Verify label names**: Labels are case-sensitive (`reviewed` not `Reviewed`)
-- **Check user permissions**: @copilot must have write access to repository
+- **Check user permissions**: @Copilot must have write access to repository
 - **Review workflow conditions**: Check `.github/workflows/game-submissions.yml` line 91
 - **Manual assignment**: If workflow fails, assign manually and investigate logs
 
