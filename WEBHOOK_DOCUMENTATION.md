@@ -16,7 +16,8 @@ The system implements a webhook-based workflow for game idea submissions that:
 
 ### 1. Form Submission
 - Users fill out the game submission form at `/submit-game`
-- Form data is sent via GitHub API repository dispatch event
+- Form data is sent to secure API route at `/api/submit-game`
+- API route handles GitHub repository dispatch event server-side
 - Falls back to localStorage if GitHub API is not available
 
 ### 2. GitHub Actions Workflow
@@ -37,13 +38,15 @@ The system implements a webhook-based workflow for game idea submissions that:
 ### 1. Repository Configuration
 No additional setup required - the system uses GitHub's built-in `GITHUB_TOKEN` which is automatically available in GitHub Actions.
 
-### 2. Environment Variables (Optional)
-For local development or direct API calls, you can set:
+### 2. Environment Variables
+For production deployment, configure the GitHub token as a server-side environment variable:
 ```bash
-NEXT_PUBLIC_GITHUB_WEBHOOK_TOKEN=your_github_token_here
+GITHUB_TOKEN=your_github_token_here
+# OR
+GITHUB_WEBHOOK_TOKEN=your_github_token_here
 ```
 
-**⚠️ Security Note**: The `NEXT_PUBLIC_` prefix exposes this token to client-side code. Only use this for testing. In production, rely on the GitHub Actions workflow for security.
+**✅ Security Note**: Tokens are now kept server-side only and never exposed to client-side code. The secure API route at `/api/submit-game` handles all GitHub API interactions.
 
 ### 3. Testing the Workflow
 
@@ -60,9 +63,10 @@ NEXT_PUBLIC_GITHUB_WEBHOOK_TOKEN=your_github_token_here
 
 ## Security Considerations
 
-- **No sensitive tokens exposed**: The system uses repository dispatch events which are processed server-side by GitHub Actions
-- **Fallback mechanism**: If GitHub API is unavailable, submissions are stored locally
-- **Input validation**: All form data is validated before processing
+- **Secure token handling**: GitHub tokens are kept server-side only through the `/api/submit-game` API route
+- **No client-side exposure**: Sensitive tokens are never exposed to the frontend
+- **Graceful fallback**: If GitHub API is unavailable, submissions are stored locally
+- **Input validation**: All form data is validated on both client and server side
 - **Automated workflow**: Reduces manual intervention and potential errors
 
 ## Issue Labels
