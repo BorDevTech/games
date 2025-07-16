@@ -148,12 +148,14 @@ class RoomManager {
   }
 
   // Get a room by ID
-  getRoom(roomId: string): Room | null {
-    // Force reload from storage to get latest data (helps with cross-tab sync)
-    this.loadRooms();
+  getRoom(roomId: string, forceReload: boolean = false): Room | null {
+    // Only force reload from storage when explicitly requested
+    if (forceReload) {
+      this.loadRooms();
+    }
     
     const room = this.rooms.get(roomId.toUpperCase());
-    if (room) {
+    if (room && forceReload) {
       room.lastActivity = new Date();
       this.saveRooms();
     }
@@ -162,7 +164,7 @@ class RoomManager {
 
   // Check if a room exists and is accessible
   isRoomAccessible(roomId: string): boolean {
-    const room = this.getRoom(roomId);
+    const room = this.getRoom(roomId, true);
     return room !== null;
   }
 
@@ -347,8 +349,10 @@ class RoomManager {
     });
   }
   updatePlayerReady(roomId: string, playerId: string, ready: boolean): { success: boolean; room?: Room; error?: string } {
-    const room = this.getRoom(roomId);
+    // Load fresh data from localStorage to ensure we have the latest state
+    this.loadRooms();
     
+    const room = this.rooms.get(roomId.toUpperCase());
     if (!room) {
       return { success: false, error: 'Room not found' };
     }
@@ -361,6 +365,8 @@ class RoomManager {
     player.ready = ready;
     player.lastActivity = new Date();
     room.lastActivity = new Date();
+    
+    // Save immediately to prevent other tabs from overwriting
     this.saveRooms();
     
     // Immediately trigger auto-start check after ready status change
