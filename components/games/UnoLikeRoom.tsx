@@ -140,8 +140,44 @@ const UnoLikeRoom: React.FC<UnoLikeRoomProps> = ({ roomId, initialRoom, onRoomDe
     }
   }, [roomId, currentPlayer, room.players, router, toast]);
 
-  // Periodic room updates (in a real app, this would be WebSocket updates)
+  // Periodic room updates and cross-tab synchronization
   useEffect(() => {
+    // Storage event listener for cross-tab synchronization
+    const handleStorageChange = (event: StorageEvent) => {
+      if (event.key === 'unolike_rooms' && event.newValue && currentPlayer) {
+        // Storage was updated from another tab, reload room data
+        const updatedRoom = roomManager.getRoom(roomId);
+        if (updatedRoom) {
+          const roomChanged = JSON.stringify(room) !== JSON.stringify(updatedRoom);
+          if (roomChanged) {
+            setRoom(updatedRoom);
+            // Update current player if their status changed
+            let updatedCurrentPlayer = updatedRoom.players.find(p => p.id === currentPlayer.id);
+            
+            // If not in main players, check queue
+            if (!updatedCurrentPlayer) {
+              updatedCurrentPlayer = updatedRoom.waitingQueue.find(p => p.id === currentPlayer.id);
+              setIsInQueue(true);
+            } else {
+              setIsInQueue(false);
+            }
+            
+            if (updatedCurrentPlayer && JSON.stringify(currentPlayer) !== JSON.stringify(updatedCurrentPlayer)) {
+              setCurrentPlayer(updatedCurrentPlayer);
+            }
+          }
+        } else {
+          // Room was deleted
+          if (onRoomDeleted) {
+            onRoomDeleted();
+          }
+        }
+      }
+    };
+
+    // Add storage event listener for cross-tab updates
+    window.addEventListener('storage', handleStorageChange);
+
     const interval = setInterval(() => {
       if (currentPlayer) {
         roomManager.updatePlayerActivity(roomId, currentPlayer.id);
@@ -175,7 +211,10 @@ const UnoLikeRoom: React.FC<UnoLikeRoomProps> = ({ roomId, initialRoom, onRoomDe
       }
     }, 3000); // Update every 3 seconds for better responsiveness
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('storage', handleStorageChange);
+    };
   }, [roomId, currentPlayer, onRoomDeleted, room]);
 
   // Copy room code to clipboard

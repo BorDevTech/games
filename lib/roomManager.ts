@@ -81,6 +81,14 @@ class RoomManager {
     if (typeof window !== 'undefined') {
       setInterval(() => this.cleanupInactiveRooms(), this.CLEANUP_INTERVAL);
       setInterval(() => this.checkAutoStart(), this.AUTO_START_CHECK_INTERVAL);
+      
+      // Listen for storage changes from other tabs
+      window.addEventListener('storage', (event) => {
+        if (event.key === this.STORAGE_KEY && event.newValue) {
+          // Reload rooms when storage changes from another tab
+          this.loadRooms();
+        }
+      });
     }
   }
 
@@ -132,8 +140,16 @@ class RoomManager {
     return room;
   }
 
+  // Force reload rooms from localStorage (useful for cross-tab synchronization)
+  reloadFromStorage(): void {
+    this.loadRooms();
+  }
+
   // Get a room by ID
   getRoom(roomId: string): Room | null {
+    // Force reload from storage to get latest data (helps with cross-tab sync)
+    this.loadRooms();
+    
     const room = this.rooms.get(roomId.toUpperCase());
     if (room) {
       room.lastActivity = new Date();
