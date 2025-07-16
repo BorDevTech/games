@@ -87,6 +87,8 @@ class RoomManager {
         if (event.key === this.STORAGE_KEY && event.newValue) {
           // Reload rooms when storage changes from another tab
           this.loadRooms();
+          // Also trigger auto-start check in case ready status changed
+          setTimeout(() => this.checkAutoStart(), 100);
         }
       });
     }
@@ -326,6 +328,9 @@ class RoomManager {
 
   // Auto-start checker for AI Dealer
   private checkAutoStart(): void {
+    // Always reload from localStorage to get the latest data across tabs
+    this.loadRooms();
+    
     this.rooms.forEach((room) => {
       // Only check rooms with AI Dealer as host and not in game
       if (room.hostId === this.AI_DEALER_ID && !room.inGame) {
@@ -357,6 +362,9 @@ class RoomManager {
     player.lastActivity = new Date();
     room.lastActivity = new Date();
     this.saveRooms();
+    
+    // Immediately trigger auto-start check after ready status change
+    setTimeout(() => this.checkAutoStart(), 100);
     
     return { success: true, room };
   }
