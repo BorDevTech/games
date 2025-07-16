@@ -262,6 +262,7 @@ const Tetris: React.FC = () => {
 
   // Save high score
   const saveHighScore = useCallback(() => {
+    if (typeof window === 'undefined') return;
     const highScores: HighScore[] = JSON.parse(localStorage.getItem('tetrisHighScores') || '[]');
     
     const newHighScore: HighScore = {
@@ -401,6 +402,8 @@ const Tetris: React.FC = () => {
 
   // Keyboard controls
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    
     const handleKeyPress = (e: KeyboardEvent) => {
       if (gameState !== 'playing') return;
       
@@ -516,6 +519,7 @@ const Tetris: React.FC = () => {
 
   // Get high scores
   const getHighScores = (): HighScore[] => {
+    if (typeof window === 'undefined') return [];
     return JSON.parse(localStorage.getItem('tetrisHighScores') || '[]')
       .filter((score: HighScore) => score.mode === gameMode)
       .slice(0, 10);
