@@ -95,10 +95,15 @@ const UnoLike: React.FC = () => {
     }
     
     const playerId = generateCardId();
+    const trimmedName = playerName.trim();
+    
+    // Store player info for the room
+    localStorage.setItem('player_name', trimmedName);
+    localStorage.setItem('temp_player_id', playerId);
     
     const newPlayer = {
       id: playerId,
-      username: playerName.trim(),
+      username: trimmedName,
       handCount: 0,
       status: 'waiting' as const,
       ready: false
@@ -108,9 +113,12 @@ const UnoLike: React.FC = () => {
     import('@/lib/roomManager').then(({ default: roomManager }) => {
       const room = roomManager.createRoom(newPlayer, gameSettings, type);
       
+      // Store room-specific player info
+      localStorage.setItem(`player_${room.id}`, playerId);
+      
       toast({
         title: "Room created!",
-        description: `Room code: ${room.id}`,
+        description: `Room code: ${room.id} (AI Dealer hosting)`,
         status: "success",
         duration: 3000,
         isClosable: true
@@ -146,10 +154,19 @@ const UnoLike: React.FC = () => {
     }
     
     const roomCode = code.toUpperCase();
+    const trimmedName = playerName.trim();
+    const playerId = generateCardId();
+    
+    // Store player info for the room
+    localStorage.setItem('player_name', trimmedName);
+    localStorage.setItem('temp_player_id', playerId);
     
     // Check if room exists and navigate to it
     import('@/lib/roomManager').then(({ default: roomManager }) => {
       if (roomManager.isRoomAccessible(roomCode)) {
+        // Store room-specific player info
+        localStorage.setItem(`player_${roomCode}`, playerId);
+        
         // Navigate to the room URL - the room page will handle the actual joining
         window.location.href = `/games/04/room/${roomCode}`;
       } else {
@@ -177,6 +194,13 @@ const UnoLike: React.FC = () => {
       return;
     }
     
+    const trimmedName = playerName.trim();
+    const playerId = generateCardId();
+    
+    // Store player info for the room
+    localStorage.setItem('player_name', trimmedName);
+    localStorage.setItem('temp_player_id', playerId);
+    
     // Get available public rooms
     import('@/lib/roomManager').then(({ default: roomManager }) => {
       const publicRooms = roomManager.getPublicRooms();
@@ -184,19 +208,22 @@ const UnoLike: React.FC = () => {
       if (publicRooms.length > 0) {
         // Join the first available public room
         const targetRoom = publicRooms[0];
+        localStorage.setItem(`player_${targetRoom.id}`, playerId);
         window.location.href = `/games/04/room/${targetRoom.id}`;
       } else {
         // No public rooms available, create one
-        const playerId = generateCardId();
         const newPlayer = {
           id: playerId,
-          username: playerName.trim(),
+          username: trimmedName,
           handCount: 0,
           status: 'waiting' as const,
           ready: false
         };
         
         const room = roomManager.createRoom(newPlayer, gameSettings, 'public');
+        
+        // Store room-specific player info
+        localStorage.setItem(`player_${room.id}`, playerId);
         
         toast({
           title: "Created new public room",

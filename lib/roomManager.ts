@@ -70,6 +70,8 @@ class RoomManager {
   private readonly ROOM_TIMEOUT = 30 * 60 * 1000; // 30 minutes
   private readonly CLEANUP_INTERVAL = 5 * 60 * 1000; // 5 minutes
   private readonly STORAGE_KEY = 'unolike_rooms';
+  private readonly AI_DEALER_ID = 'ai-dealer-bot';
+  private readonly AUTO_START_CHECK_INTERVAL = 2000; // Check every 2 seconds for auto-start
   
   constructor() {
     // Load rooms from localStorage
@@ -78,24 +80,45 @@ class RoomManager {
     // Start cleanup timer
     if (typeof window !== 'undefined') {
       setInterval(() => this.cleanupInactiveRooms(), this.CLEANUP_INTERVAL);
+      setInterval(() => this.checkAutoStart(), this.AUTO_START_CHECK_INTERVAL);
     }
   }
 
-  // Create a new room
-  createRoom(hostPlayer: Omit<Player, 'isHost' | 'joinedAt' | 'lastActivity'>, settings: GameSettings, type: 'public' | 'private' = 'public'): Room {
+  // Create AI Dealer player
+  private createAIDealer(): Player {
+    return {
+      id: this.AI_DEALER_ID,
+      username: 'Dealer',
+      handCount: 0,
+      isHost: true,
+      status: 'waiting',
+      ready: true,
+      joinedAt: new Date(),
+      lastActivity: new Date()
+    };
+  }
+
+  // Create a new room with AI Dealer as host
+  createRoom(firstPlayer: Omit<Player, 'isHost' | 'joinedAt' | 'lastActivity'>, settings: GameSettings, type: 'public' | 'private' = 'public'): Room {
     const roomId = this.generateRoomCode();
+    
+    // Create AI Dealer as the host
+    const dealer = this.createAIDealer();
+    
+    // Create the first human player (not as host)
+    const humanPlayer: Player = {
+      ...firstPlayer,
+      isHost: false,
+      joinedAt: new Date(),
+      lastActivity: new Date()
+    };
     
     const room: Room = {
       id: roomId,
-      name: `${hostPlayer.username}'s Room`,
+      name: `Dealer's Room`,
       type,
-      hostId: hostPlayer.id,
-      players: [{
-        ...hostPlayer,
-        isHost: true,
-        joinedAt: new Date(),
-        lastActivity: new Date()
-      }],
+      hostId: dealer.id,
+      players: [dealer, humanPlayer], // Dealer first, then human player
       maxPlayers: settings.maxPlayers,
       inGame: false,
       settings: { ...settings },
@@ -133,7 +156,13 @@ class RoomManager {
       return { success: false, error: 'Room not found' };
     }
 
-    if (room.players.some(p => p.username === player.username)) {
+    // Check for duplicate usernames (excluding AI Dealer)
+    if (room.players.some(p => p.id !== this.AI_DEALER_ID && p.username === player.username)) {
+      return { success: false, error: 'Username already taken in this room' };
+    }
+
+    // Also check waiting queue for duplicate names
+    if (room.waitingQueue.some(p => p.username === player.username)) {
       return { success: false, error: 'Username already taken in this room' };
     }
 
@@ -182,24 +211,23 @@ class RoomManager {
       return { success: false };
     }
 
+    // Prevent AI Dealer from leaving
+    if (playerId === this.AI_DEALER_ID) {
+      return { success: false };
+    }
+
     // Check if player is in main room
     const playerIndex = room.players.findIndex(p => p.id === playerId);
     if (playerIndex !== -1) {
-      const leavingPlayer = room.players[playerIndex];
       room.players.splice(playerIndex, 1);
       room.lastActivity = new Date();
 
-      // If no players left, delete the room
-      if (room.players.length === 0 && room.waitingQueue.length === 0) {
+      // If only AI Dealer is left and no queue, delete the room
+      const humanPlayers = room.players.filter(p => p.id !== this.AI_DEALER_ID);
+      if (humanPlayers.length === 0 && room.waitingQueue.length === 0) {
         this.rooms.delete(roomId);
         this.saveRooms();
         return { success: true, roomDeleted: true };
-      }
-
-      // If the host left, assign new host
-      if (leavingPlayer.isHost && room.players.length > 0) {
-        room.players[0].isHost = true;
-        room.hostId = room.players[0].id;
       }
 
       // Move next queued player to main room if there's space
@@ -219,8 +247,9 @@ class RoomManager {
       room.waitingQueue.splice(queueIndex, 1);
       room.lastActivity = new Date();
       
-      // If no players left, delete the room
-      if (room.players.length === 0 && room.waitingQueue.length === 0) {
+      // If only AI Dealer is left and no queue, delete the room
+      const humanPlayers = room.players.filter(p => p.id !== this.AI_DEALER_ID);
+      if (humanPlayers.length === 0 && room.waitingQueue.length === 0) {
         this.rooms.delete(roomId);
         this.saveRooms();
         return { success: true, roomDeleted: true };
@@ -231,6 +260,29 @@ class RoomManager {
     }
 
     return { success: false };
+  }
+
+  // Check if player exists in room (either in main room or queue)
+  isPlayerInRoom(roomId: string, playerId: string): { inRoom: boolean; inQueue: boolean; player?: Player } {
+    const room = this.getRoom(roomId);
+    
+    if (!room) {
+      return { inRoom: false, inQueue: false };
+    }
+
+    // Check main room
+    const mainPlayer = room.players.find(p => p.id === playerId);
+    if (mainPlayer) {
+      return { inRoom: true, inQueue: false, player: mainPlayer };
+    }
+
+    // Check waiting queue
+    const queuedPlayer = room.waitingQueue.find(p => p.id === playerId);
+    if (queuedPlayer) {
+      return { inRoom: false, inQueue: true, player: queuedPlayer };
+    }
+
+    return { inRoom: false, inQueue: false };
   }
 
   // Update player activity
@@ -256,7 +308,23 @@ class RoomManager {
     }
   }
 
-  // Update player ready status
+  // Auto-start checker for AI Dealer
+  private checkAutoStart(): void {
+    this.rooms.forEach((room) => {
+      // Only check rooms with AI Dealer as host and not in game
+      if (room.hostId === this.AI_DEALER_ID && !room.inGame) {
+        const readyHumanPlayers = room.players.filter(p => 
+          p.id !== this.AI_DEALER_ID && p.ready && p.status === 'waiting'
+        );
+        
+        // Auto-start if we have at least 2 ready human players
+        if (readyHumanPlayers.length >= 2) {
+          console.log(`AI Dealer auto-starting game in room ${room.id} with ${readyHumanPlayers.length} ready players`);
+          this.startGame(room.id, this.AI_DEALER_ID);
+        }
+      }
+    });
+  }
   updatePlayerReady(roomId: string, playerId: string, ready: boolean): { success: boolean; room?: Room; error?: string } {
     const room = this.getRoom(roomId);
     
@@ -289,15 +357,17 @@ class RoomManager {
       return { success: false, error: 'Only host can start the game' };
     }
 
-    if (room.players.filter(p => p.status === 'waiting').length < 2) {
-      return { success: false, error: 'Need at least 2 players to start' };
+    // Count human players only (exclude AI Dealer)
+    const humanPlayers = room.players.filter(p => p.id !== this.AI_DEALER_ID && p.status === 'waiting');
+    if (humanPlayers.length < 2) {
+      return { success: false, error: 'Need at least 2 human players to start' };
     }
 
     room.inGame = true;
     room.gameStartedAt = new Date();
     room.lastActivity = new Date();
     
-    // Set all waiting players to playing
+    // Set all waiting players to playing (including AI Dealer)
     room.players.forEach(player => {
       if (player.status === 'waiting') {
         player.status = 'playing';
@@ -366,10 +436,13 @@ class RoomManager {
     return code;
   }
 
-  // Get all public rooms (for quick play)
+  // Get all public rooms (for quick play) - exclude AI Dealer from player count
   getPublicRooms(): Room[] {
     return Array.from(this.rooms.values())
-      .filter(room => room.type === 'public' && !room.inGame && room.players.length < room.maxPlayers)
+      .filter(room => {
+        const humanPlayerCount = room.players.filter(p => p.id !== this.AI_DEALER_ID).length;
+        return room.type === 'public' && !room.inGame && humanPlayerCount < (room.maxPlayers - 1); // -1 for AI Dealer slot
+      })
       .sort((a, b) => b.lastActivity.getTime() - a.lastActivity.getTime());
   }
 
