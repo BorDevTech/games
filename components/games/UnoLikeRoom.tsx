@@ -355,6 +355,7 @@ const UnoLikeRoom: React.FC<UnoLikeRoomProps> = ({ roomId, initialRoom, onRoomDe
     return (
       <VStack spacing={6} maxW="1200px" mx="auto">
         <UnoGameplay 
+          roomId={roomId}
           players={room.players} 
           currentPlayer={currentPlayer}
           onEndGame={endGame}

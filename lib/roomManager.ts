@@ -72,15 +72,23 @@ class RoomManager {
   private readonly STORAGE_KEY = 'unolike_rooms';
   private readonly AI_DEALER_ID = 'ai-dealer-bot';
   private readonly AUTO_START_CHECK_INTERVAL = 2000; // Check every 2 seconds for auto-start
+  private readonly API_SYNC_INTERVAL = 3000; // Sync with API every 3 seconds
+  private apiSyncEnabled = false;
   
   constructor() {
     // Load rooms from localStorage
     this.loadRooms();
     
-    // Start cleanup timer
+    // Enable API sync if we're in a browser environment
     if (typeof window !== 'undefined') {
+      this.apiSyncEnabled = true;
+      
+      // Start cleanup timer
       setInterval(() => this.cleanupInactiveRooms(), this.CLEANUP_INTERVAL);
       setInterval(() => this.checkAutoStart(), this.AUTO_START_CHECK_INTERVAL);
+      
+      // Start API synchronization
+      setInterval(() => this.syncWithAPI(), this.API_SYNC_INTERVAL);
       
       // Listen for storage changes from other tabs
       window.addEventListener('storage', (event) => {
@@ -513,6 +521,88 @@ class RoomManager {
 
   // Save rooms to localStorage
   private saveRooms(): void {
+    if (typeof window === 'undefined') return;
+    
+    try {
+      const roomsArray = Array.from(this.rooms.entries()).map(([id, room]) => [id, room]);
+      localStorage.setItem(this.STORAGE_KEY, JSON.stringify(roomsArray));
+      
+      // Also sync to API if enabled
+      if (this.apiSyncEnabled) {
+        this.syncRoomsToAPI();
+      }
+    } catch (error) {
+      console.warn('Failed to save rooms to localStorage:', error);
+    }
+  }
+
+  // Sync rooms to API
+  private async syncRoomsToAPI(): Promise<void> {
+    if (!this.apiSyncEnabled || typeof window === 'undefined') return;
+    
+    try {
+      for (const [roomId, room] of this.rooms) {
+        await fetch('/api/rooms', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ roomId, roomState: room })
+        });
+      }
+    } catch (error) {
+      console.warn('Failed to sync rooms to API:', error);
+    }
+  }
+
+  // Sync from API
+  private async syncWithAPI(): Promise<void> {
+    if (!this.apiSyncEnabled || typeof window === 'undefined') return;
+    
+    try {
+      // Get all rooms from API
+      const response = await fetch('/api/rooms');
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.rooms) {
+          // Check if any room from API is newer than local
+          for (const apiRoom of data.rooms) {
+            const localRoom = this.rooms.get(apiRoom.id);
+            const apiRoomState = apiRoom.state;
+            
+            if (!localRoom || new Date(apiRoomState.lastActivity) > new Date(localRoom.lastActivity)) {
+              // API has newer data, update local
+              const convertedRoom: Room = {
+                ...apiRoomState,
+                createdAt: new Date(apiRoomState.createdAt),
+                lastActivity: new Date(apiRoomState.lastActivity),
+                gameStartedAt: apiRoomState.gameStartedAt ? new Date(apiRoomState.gameStartedAt) : undefined,
+                gameEndedAt: apiRoomState.gameEndedAt ? new Date(apiRoomState.gameEndedAt) : undefined,
+                players: apiRoomState.players.map((player: SerializedPlayer) => ({
+                  ...player,
+                  joinedAt: new Date(player.joinedAt),
+                  lastActivity: new Date(player.lastActivity)
+                })),
+                waitingQueue: (apiRoomState.waitingQueue || []).map((player: SerializedPlayer) => ({
+                  ...player,
+                  joinedAt: new Date(player.joinedAt),
+                  lastActivity: new Date(player.lastActivity)
+                }))
+              };
+              
+              this.rooms.set(apiRoom.id, convertedRoom);
+            }
+          }
+          
+          // Save updated data to localStorage
+          this.saveRoomsToLocalStorageOnly();
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to sync from API:', error);
+    }
+  }
+
+  // Save to localStorage only (without triggering API sync)
+  private saveRoomsToLocalStorageOnly(): void {
     if (typeof window === 'undefined') return;
     
     try {
