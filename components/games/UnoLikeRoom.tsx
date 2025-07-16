@@ -26,6 +26,7 @@ import {
 } from 'react-icons/fa';
 import { useRouter } from 'next/navigation';
 import roomManager, { Room, Player } from '@/lib/roomManager';
+import UnoGameplay from './UnoGameplay';
 
 // Types
 
@@ -285,6 +286,43 @@ const UnoLikeRoom: React.FC<UnoLikeRoomProps> = ({ roomId, initialRoom, onRoomDe
     }
   };
 
+  // End game and return to lobby
+  const endGame = () => {
+    if (!currentPlayer) return;
+
+    const result = roomManager.endGame(roomId);
+    
+    if (result.success) {
+      // Reload room to get updated state
+      const updatedRoom = roomManager.getRoom(roomId, true);
+      if (updatedRoom) {
+        setRoom(updatedRoom);
+        
+        // Update current player status
+        const updatedPlayer = updatedRoom.players.find(p => p.id === currentPlayer.id);
+        if (updatedPlayer) {
+          setCurrentPlayer(updatedPlayer);
+        }
+        
+        toast({
+          title: "Game ended",
+          description: "Returned to lobby",
+          status: "info",
+          duration: 3000,
+          isClosable: true
+        });
+      }
+    } else {
+      toast({
+        title: "Error",
+        description: "Failed to end game",
+        status: "error",
+        duration: 3000,
+        isClosable: true
+      });
+    }
+  };
+
   // Leave room
   const leaveRoom = () => {
     if (!currentPlayer) return;
@@ -308,6 +346,22 @@ const UnoLikeRoom: React.FC<UnoLikeRoomProps> = ({ roomId, initialRoom, onRoomDe
 
     router.push('/games/04');
   };
+
+  // Check if game is in progress
+  const isGameInProgress = room.inGame && room.players.some(p => p.status === 'playing');
+
+  // If game is in progress, show the gameplay component
+  if (isGameInProgress && currentPlayer && !isInQueue) {
+    return (
+      <VStack spacing={6} maxW="1200px" mx="auto">
+        <UnoGameplay 
+          players={room.players} 
+          currentPlayer={currentPlayer}
+          onEndGame={endGame}
+        />
+      </VStack>
+    );
+  }
 
   // Render lobby screen
   return (
