@@ -18,33 +18,16 @@ import {
   IconButton,
   Tooltip,
   Avatar,
-  Divider,
-  List,
-  ListItem,
-  ListIcon
+  Divider
 } from '@chakra-ui/react';
 import { 
   FaCopy, 
-  FaCrown, 
-  FaPlay,
-  FaGamepad,
-  FaSync,
-  FaRandom
+  FaCrown
 } from 'react-icons/fa';
 import { useRouter } from 'next/navigation';
 import roomManager, { Room, Player } from '@/lib/roomManager';
 
 // Types
-type CardColor = 'red' | 'blue' | 'green' | 'yellow' | 'wild';
-type CardType = 'number' | 'skip' | 'reverse' | 'draw2' | 'wild' | 'wild_draw4';
-type GameState = 'lobby' | 'playing' | 'finished';
-
-interface Card {
-  id: string;
-  color: CardColor;
-  type: CardType;
-  value?: number;
-}
 
 interface UnoLikeRoomProps {
   roomId: string;
@@ -63,29 +46,86 @@ const UnoLikeRoom: React.FC<UnoLikeRoomProps> = ({ roomId, initialRoom, onRoomDe
   // State
   const [room, setRoom] = useState<Room>(initialRoom);
   const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null);
-  const [gameState, setGameState] = useState<GameState>('lobby');
-  const [playerHand, setPlayerHand] = useState<Card[]>([]);
-  const [currentCard, setCurrentCard] = useState<Card | null>(null);
-  const [turnOrder, setTurnOrder] = useState<string[]>([]);
-  const [currentTurn, setCurrentTurn] = useState<number>(0);
+  const [isInQueue, setIsInQueue] = useState<boolean>(false);
 
-  // Join the room if no current player
+  // Initialize current player from URL or local storage
   useEffect(() => {
     if (!currentPlayer) {
-      // For demo purposes, create a demo player
-      // In a real app, this would come from user authentication
-      const demoPlayer: Omit<Player, 'isHost' | 'joinedAt' | 'lastActivity'> = {
-        id: Math.random().toString(36).substring(2, 15),
-        username: `Player${Math.floor(Math.random() * 1000)}`,
+      // Get player info from localStorage
+      const storedPlayerId = localStorage.getItem(`player_${roomId}`) || localStorage.getItem('temp_player_id');
+      const storedPlayerName = localStorage.getItem('player_name');
+      
+      if (!storedPlayerId || !storedPlayerName) {
+        // No stored player info, redirect back to main game page
+        toast({
+          title: "Player info missing",
+          description: "Please enter your name from the main game page first",
+          status: "warning",
+          duration: 3000,
+          isClosable: true
+        });
+        router.push('/games/04');
+        return;
+      }
+      
+      // Check if this player is already in the room
+      const playerCheck = roomManager.isPlayerInRoom(roomId, storedPlayerId);
+      if (playerCheck.inRoom && playerCheck.player) {
+        setCurrentPlayer(playerCheck.player);
+        setIsInQueue(false);
+        return;
+      } else if (playerCheck.inQueue && playerCheck.player) {
+        setCurrentPlayer(playerCheck.player);
+        setIsInQueue(true);
+        return;
+      }
+      
+      // Player not in room, attempt to join
+      const newPlayer: Omit<Player, 'isHost' | 'joinedAt' | 'lastActivity'> = {
+        id: storedPlayerId,
+        username: storedPlayerName.trim(),
         handCount: 0,
         status: 'waiting',
         ready: false
       };
 
-      const result = roomManager.joinRoom(roomId, demoPlayer);
+      const result = roomManager.joinRoom(roomId, newPlayer);
       if (result.success && result.room) {
         setRoom(result.room);
-        setCurrentPlayer(result.room.players.find(p => p.id === demoPlayer.id) || null);
+        
+        if (result.inQueue) {
+          // Player was added to queue
+          setIsInQueue(true);
+          const queuedPlayer = result.room.waitingQueue.find(p => p.id === storedPlayerId);
+          setCurrentPlayer(queuedPlayer || null);
+          
+          // Update stored player ID for this room
+          localStorage.setItem(`player_${roomId}`, storedPlayerId);
+          
+          toast({
+            title: "Added to queue",
+            description: `Room is full. You are #${result.room.waitingQueue.length} in the waiting queue.`,
+            status: "info",
+            duration: 5000,
+            isClosable: true
+          });
+        } else {
+          // Player joined directly
+          setIsInQueue(false);
+          const joinedPlayer = result.room.players.find(p => p.id === storedPlayerId);
+          setCurrentPlayer(joinedPlayer || null);
+          
+          // Update stored player ID for this room
+          localStorage.setItem(`player_${roomId}`, storedPlayerId);
+          
+          toast({
+            title: "Joined room!",
+            description: `Welcome to ${result.room.name}`,
+            status: "success",
+            duration: 3000,
+            isClosable: true
+          });
+        }
       } else {
         toast({
           title: "Failed to join room",
@@ -94,18 +134,38 @@ const UnoLikeRoom: React.FC<UnoLikeRoomProps> = ({ roomId, initialRoom, onRoomDe
           duration: 3000,
           isClosable: true
         });
+        // Redirect back to main game page
+        router.push('/games/04');
       }
     }
-  }, [roomId, currentPlayer, toast]);
+  }, [roomId, currentPlayer, room.players, router, toast]);
 
-  // Periodic room updates (in a real app, this would be WebSocket updates)
+  // Periodic room updates and cross-tab synchronization
   useEffect(() => {
-    const interval = setInterval(() => {
-      if (currentPlayer) {
-        roomManager.updatePlayerActivity(roomId, currentPlayer.id);
+    // Storage event listener for cross-tab synchronization
+    const handleStorageChange = (event: StorageEvent) => {
+      if (event.key === 'unolike_rooms' && event.newValue && currentPlayer) {
+        // Storage was updated from another tab, reload room data
         const updatedRoom = roomManager.getRoom(roomId);
         if (updatedRoom) {
-          setRoom(updatedRoom);
+          const roomChanged = JSON.stringify(room) !== JSON.stringify(updatedRoom);
+          if (roomChanged) {
+            setRoom(updatedRoom);
+            // Update current player if their status changed
+            let updatedCurrentPlayer = updatedRoom.players.find(p => p.id === currentPlayer.id);
+            
+            // If not in main players, check queue
+            if (!updatedCurrentPlayer) {
+              updatedCurrentPlayer = updatedRoom.waitingQueue.find(p => p.id === currentPlayer.id);
+              setIsInQueue(true);
+            } else {
+              setIsInQueue(false);
+            }
+            
+            if (updatedCurrentPlayer && JSON.stringify(currentPlayer) !== JSON.stringify(updatedCurrentPlayer)) {
+              setCurrentPlayer(updatedCurrentPlayer);
+            }
+          }
         } else {
           // Room was deleted
           if (onRoomDeleted) {
@@ -113,10 +173,49 @@ const UnoLikeRoom: React.FC<UnoLikeRoomProps> = ({ roomId, initialRoom, onRoomDe
           }
         }
       }
-    }, 10000); // Update every 10 seconds
+    };
 
-    return () => clearInterval(interval);
-  }, [roomId, currentPlayer, onRoomDeleted]);
+    // Add storage event listener for cross-tab updates
+    window.addEventListener('storage', handleStorageChange);
+
+    const interval = setInterval(() => {
+      if (currentPlayer) {
+        roomManager.updatePlayerActivity(roomId, currentPlayer.id);
+        const updatedRoom = roomManager.getRoom(roomId);
+        if (updatedRoom) {
+          // Check if the room data has actually changed before updating state
+          const roomChanged = JSON.stringify(room) !== JSON.stringify(updatedRoom);
+          if (roomChanged) {
+            setRoom(updatedRoom);
+            // Update current player if their status changed
+            let updatedCurrentPlayer = updatedRoom.players.find(p => p.id === currentPlayer.id);
+            
+            // If not in main players, check queue
+            if (!updatedCurrentPlayer) {
+              updatedCurrentPlayer = updatedRoom.waitingQueue.find(p => p.id === currentPlayer.id);
+              setIsInQueue(true);
+            } else {
+              setIsInQueue(false);
+            }
+            
+            if (updatedCurrentPlayer && JSON.stringify(currentPlayer) !== JSON.stringify(updatedCurrentPlayer)) {
+              setCurrentPlayer(updatedCurrentPlayer);
+            }
+          }
+        } else {
+          // Room was deleted
+          if (onRoomDeleted) {
+            onRoomDeleted();
+          }
+        }
+      }
+    }, 3000); // Update every 3 seconds for better responsiveness
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, [roomId, currentPlayer, onRoomDeleted, room]);
 
   // Copy room code to clipboard
   const copyRoomCode = async () => {
@@ -153,72 +252,37 @@ const UnoLikeRoom: React.FC<UnoLikeRoomProps> = ({ roomId, initialRoom, onRoomDe
 
   // Toggle player ready status
   const toggleReady = () => {
-    if (!currentPlayer) return;
+    if (!currentPlayer || isInQueue) return;
     
     const newReady = !currentPlayer.ready;
-    setCurrentPlayer(prev => prev ? { ...prev, ready: newReady } : null);
     
-    // Update room
-    const updatedRoom = { ...room };
-    const playerIndex = updatedRoom.players.findIndex(p => p.id === currentPlayer.id);
-    if (playerIndex !== -1) {
-      updatedRoom.players[playerIndex].ready = newReady;
-      setRoom(updatedRoom);
-    }
+    // Update ready status through room manager
+    const result = roomManager.updatePlayerReady(roomId, currentPlayer.id, newReady);
     
-    toast({
-      title: newReady ? "Ready!" : "Not ready",
-      description: newReady ? "You are ready to play" : "You are not ready",
-      status: newReady ? "success" : "info",
-      duration: 2000,
-      isClosable: true
-    });
-  };
-
-  // Start the game
-  const startGame = () => {
-    if (!currentPlayer || !room) return;
-    
-    const result = roomManager.startGame(roomId, currentPlayer.id);
-    
-    if (!result.success) {
+    if (result.success && result.room) {
+      setRoom(result.room);
+      // Update current player state
+      const updatedPlayer = result.room.players.find(p => p.id === currentPlayer.id);
+      if (updatedPlayer) {
+        setCurrentPlayer(updatedPlayer);
+      }
+      
       toast({
-        title: "Cannot start game",
-        description: result.error || "Failed to start game",
-        status: "warning",
+        title: newReady ? "Ready!" : "Not ready",
+        description: newReady ? "You are ready to play" : "You are not ready",
+        status: newReady ? "success" : "info",
+        duration: 2000,
+        isClosable: true
+      });
+    } else {
+      toast({
+        title: "Error",
+        description: result.error || "Failed to update ready status",
+        status: "error",
         duration: 3000,
         isClosable: true
       });
-      return;
     }
-
-    // Initialize game
-    const deck = createDeck();
-    const shuffledDeck = shuffleDeck(deck);
-    const startCard = shuffledDeck.find(card => card.type === 'number' && card.color !== 'wild');
-    
-    if (startCard) {
-      setCurrentCard(startCard);
-    }
-    
-    // Deal initial hands (7 cards each)
-    const initialHand = shuffledDeck.slice(0, 7);
-    setPlayerHand(initialHand);
-    
-    // Set turn order
-    const activePlayers = room.players.filter(p => p.status === 'waiting');
-    setTurnOrder(activePlayers.map(p => p.id));
-    setCurrentTurn(0);
-    
-    setGameState('playing');
-    
-    toast({
-      title: "Game started!",
-      description: "UNO-like game has begun!",
-      status: "success",
-      duration: 3000,
-      isClosable: true
-    });
   };
 
   // Leave room
@@ -245,128 +309,46 @@ const UnoLikeRoom: React.FC<UnoLikeRoomProps> = ({ roomId, initialRoom, onRoomDe
     router.push('/games/04');
   };
 
-  // Game helper functions
-  const generateCardId = (): string => {
-    return Math.random().toString(36).substring(2, 15);
-  };
-
-  const createDeck = (): Card[] => {
-    const deck: Card[] = [];
-    const colors: CardColor[] = ['red', 'blue', 'green', 'yellow'];
-    
-    colors.forEach(color => {
-      deck.push({
-        id: generateCardId(),
-        color,
-        type: 'number',
-        value: 0
-      });
-      
-      for (let num = 1; num <= 9; num++) {
-        for (let i = 0; i < 2; i++) {
-          deck.push({
-            id: generateCardId(),
-            color,
-            type: 'number',
-            value: num
-          });
-        }
-      }
-      
-      const actionTypes: CardType[] = ['skip', 'reverse', 'draw2'];
-      actionTypes.forEach(actionType => {
-        for (let i = 0; i < 2; i++) {
-          deck.push({
-            id: generateCardId(),
-            color,
-            type: actionType
-          });
-        }
-      });
-    });
-    
-    for (let i = 0; i < 4; i++) {
-      deck.push({
-        id: generateCardId(),
-        color: 'wild',
-        type: 'wild'
-      });
-      deck.push({
-        id: generateCardId(),
-        color: 'wild',
-        type: 'wild_draw4'
-      });
-    }
-    
-    return deck;
-  };
-
-  const shuffleDeck = (deck: Card[]): Card[] => {
-    const shuffled = [...deck];
-    for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
-    return shuffled;
-  };
-
-  const getCardColor = (card: Card): string => {
-    switch (card.color) {
-      case 'red': return '#E53E3E';
-      case 'blue': return '#3182CE';
-      case 'green': return '#38A169';
-      case 'yellow': return '#D69E2E';
-      case 'wild': return '#6B46C1';
-      default: return '#4A5568';
-    }
-  };
-
-  const getCardDisplayText = (card: Card): string => {
-    if (card.type === 'number') return card.value?.toString() || '0';
-    if (card.type === 'skip') return 'SKIP';
-    if (card.type === 'reverse') return '⟲';
-    if (card.type === 'draw2') return '+2';
-    if (card.type === 'wild') return 'WILD';
-    if (card.type === 'wild_draw4') return '+4';
-    return '';
-  };
-
   // Render lobby screen
-  if (gameState === 'lobby') {
-    return (
-      <VStack spacing={6} maxW="1000px" mx="auto">
-        <VStack spacing={2} textAlign="center">
-          <Heading size="lg">
-            {room.name || `Room ${roomId}`}
-          </Heading>
-          <HStack spacing={2}>
-            <Badge colorScheme={room.type === 'public' ? 'green' : 'purple'}>
-              {room.type === 'public' ? 'Public' : 'Private'}
-            </Badge>
-            <Badge colorScheme="blue">
-              Room Code: {roomId}
-            </Badge>
-            <Tooltip label="Copy room code">
-              <IconButton
-                aria-label="Copy room code"
-                icon={<FaCopy />}
-                size="xs"
-                onClick={copyRoomCode}
-              />
-            </Tooltip>
-          </HStack>
-          <Button size="sm" variant="outline" onClick={shareRoom}>
-            Share Room URL
-          </Button>
-        </VStack>
+  return (
+    <VStack spacing={6} maxW="1000px" mx="auto">
+      <VStack spacing={2} textAlign="center">
+        <Heading size="lg">
+          {room.name || `Room ${roomId}`}
+        </Heading>
+        <HStack spacing={2}>
+          <Badge colorScheme={room.type === 'public' ? 'green' : 'purple'}>
+            {room.type === 'public' ? 'Public' : 'Private'}
+          </Badge>
+          <Badge colorScheme="blue">
+            Room Code: {roomId}
+          </Badge>
+          <Tooltip label="Copy room code">
+            <IconButton
+              aria-label="Copy room code"
+              icon={<FaCopy />}
+              size="xs"
+              onClick={copyRoomCode}
+            />
+          </Tooltip>
+        </HStack>
+        <Button size="sm" variant="outline" onClick={shareRoom}>
+          Share Room URL
+        </Button>
+      </VStack>
 
         <Grid templateColumns={{ base: '1fr', md: '1fr 1fr' }} gap={6} w="full">
           {/* Players List */}
           <Card>
             <CardHeader>
               <Heading size="md">
-                Players ({room.players.length}/{room.maxPlayers})
+                Players ({room.players.filter(p => p.id !== 'ai-dealer-bot').length}/{room.maxPlayers - 1})
               </Heading>
+              {room.waitingQueue.length > 0 && (
+                <Text fontSize="sm" color="gray.500">
+                  + {room.waitingQueue.length} in queue
+                </Text>
+              )}
             </CardHeader>
             <CardBody>
               <VStack spacing={3} align="stretch">
@@ -378,23 +360,35 @@ const UnoLikeRoom: React.FC<UnoLikeRoomProps> = ({ roomId, initialRoom, onRoomDe
                     bg={player.ready ? 'green.50' : 'gray.50'}
                     border="1px"
                     borderColor={player.ready ? 'green.200' : borderColor}
+                    opacity={player.id === 'ai-dealer-bot' ? 0.7 : 1}
                   >
                     <HStack justify="space-between">
                       <HStack spacing={2}>
-                        <Avatar size="sm" name={player.username} />
+                        <Avatar 
+                          size="sm" 
+                          name={player.username}
+                          bg={player.id === 'ai-dealer-bot' ? 'purple.400' : undefined}
+                        />
                         <VStack align="start" spacing={0}>
                           <HStack spacing={1}>
-                            <Text fontWeight="medium">{player.username}</Text>
+                            <Text fontWeight="medium">
+                              {player.username}
+                              {player.id === 'ai-dealer-bot' && ' (AI)'}
+                            </Text>
                             {player.isHost && (
-                              <Tooltip label="Room Host">
+                              <Tooltip label="Game Host">
                                 <Box color="gold">
                                   <FaCrown />
                                 </Box>
                               </Tooltip>
                             )}
+                            {currentPlayer?.id === player.id && (
+                              <Badge colorScheme="blue" size="sm">You</Badge>
+                            )}
                           </HStack>
                           <Text fontSize="xs" color="gray.500">
                             {player.status}
+                            {player.id === 'ai-dealer-bot' && ' • Auto-hosts games'}
                           </Text>
                         </VStack>
                       </HStack>
@@ -404,6 +398,46 @@ const UnoLikeRoom: React.FC<UnoLikeRoomProps> = ({ roomId, initialRoom, onRoomDe
                     </HStack>
                   </Box>
                 ))}
+                
+                {/* Show waiting queue */}
+                {room.waitingQueue.length > 0 && (
+                  <>
+                    <Divider />
+                    <Text fontSize="sm" fontWeight="medium" color="gray.600">
+                      Waiting Queue ({room.waitingQueue.length})
+                    </Text>
+                    {room.waitingQueue.map((player, index) => (
+                      <Box
+                        key={player.id}
+                        p={3}
+                        borderRadius="md"
+                        bg="orange.50"
+                        border="1px"
+                        borderColor="orange.200"
+                      >
+                        <HStack justify="space-between">
+                          <HStack spacing={2}>
+                            <Avatar size="sm" name={player.username} />
+                            <VStack align="start" spacing={0}>
+                              <HStack spacing={1}>
+                                <Text fontWeight="medium">{player.username}</Text>
+                                {currentPlayer?.id === player.id && (
+                                  <Badge colorScheme="blue" size="sm">You</Badge>
+                                )}
+                              </HStack>
+                              <Text fontSize="xs" color="gray.500">
+                                Position #{index + 1} in queue
+                              </Text>
+                            </VStack>
+                          </HStack>
+                          <Badge colorScheme="orange">
+                            Waiting
+                          </Badge>
+                        </HStack>
+                      </Box>
+                    ))}
+                  </>
+                )}
               </VStack>
             </CardBody>
           </Card>
@@ -415,299 +449,91 @@ const UnoLikeRoom: React.FC<UnoLikeRoomProps> = ({ roomId, initialRoom, onRoomDe
             </CardHeader>
             <CardBody>
               <VStack spacing={4}>
-                {currentPlayer?.isHost && (
+                {isInQueue ? (
                   <VStack spacing={3} w="full">
-                    <Text fontSize="sm" color="gray.500" textAlign="center">
-                      Host Controls
+                    <Text fontSize="sm" color="orange.500" textAlign="center" fontWeight="medium">
+                      You are in the waiting queue
+                    </Text>
+                    <Text fontSize="xs" color="gray.500" textAlign="center">
+                      You'll be moved to the game when a spot becomes available
                     </Text>
                     <Button
-                      colorScheme="green"
-                      size="lg"
-                      leftIcon={<FaPlay />}
-                      onClick={startGame}
+                      variant="outline"
+                      colorScheme="red"
+                      onClick={leaveRoom}
                       w="full"
-                      isDisabled={
-                        !room.players.some(p => p.id !== currentPlayer.id) ||
-                        room.players.filter(p => p.status === 'waiting').length < 2
-                      }
                     >
-                      Start Game
+                      Leave Queue
                     </Button>
-                    <Text fontSize="xs" color="gray.500" textAlign="center">
-                      Need at least 2 players to start
-                    </Text>
                   </VStack>
+                ) : (
+                  <>
+                    {/* AI Dealer Auto-Start Info */}
+                    <VStack spacing={3} w="full">
+                      <Text fontSize="sm" color="purple.500" textAlign="center" fontWeight="medium">
+                        AI Dealer Auto-Start
+                      </Text>
+                      <Text fontSize="xs" color="gray.500" textAlign="center">
+                        Game will start automatically when 2+ players are ready
+                      </Text>
+                      {(() => {
+                        const readyHumanPlayers = room.players.filter(p => 
+                          p.id !== 'ai-dealer-bot' && p.ready && p.status === 'waiting'
+                        ).length;
+                        const totalHumanPlayers = room.players.filter(p => p.id !== 'ai-dealer-bot').length;
+                        
+                        if (readyHumanPlayers >= 2) {
+                          return (
+                            <Badge colorScheme="green">
+                              Starting soon... ({readyHumanPlayers} ready!)
+                            </Badge>
+                          );
+                        } else {
+                          return (
+                            <Badge colorScheme="gray">
+                              {readyHumanPlayers}/{Math.max(2, totalHumanPlayers)} ready
+                            </Badge>
+                          );
+                        }
+                      })()}
+                    </VStack>
+
+                    <Divider />
+
+                    <VStack spacing={3} w="full">
+                      <Text fontSize="sm" color="gray.500" textAlign="center">
+                        Player Controls
+                      </Text>
+                      <Button
+                        colorScheme={currentPlayer?.ready ? 'red' : 'blue'}
+                        variant={currentPlayer?.ready ? 'outline' : 'solid'}
+                        onClick={toggleReady}
+                        w="full"
+                      >
+                        {currentPlayer?.ready ? 'Not Ready' : 'Ready'}
+                      </Button>
+                    </VStack>
+
+                    <Divider />
+
+                    <VStack spacing={3} w="full">
+                      <Button
+                        variant="outline"
+                        colorScheme="red"
+                        onClick={leaveRoom}
+                        w="full"
+                      >
+                        Leave Room
+                      </Button>
+                    </VStack>
+                  </>
                 )}
-
-                <Divider />
-
-                <VStack spacing={3} w="full">
-                  <Text fontSize="sm" color="gray.500" textAlign="center">
-                    Player Controls
-                  </Text>
-                  <Button
-                    colorScheme={currentPlayer?.ready ? 'red' : 'blue'}
-                    variant={currentPlayer?.ready ? 'outline' : 'solid'}
-                    onClick={toggleReady}
-                    w="full"
-                  >
-                    {currentPlayer?.ready ? 'Not Ready' : 'Ready'}
-                  </Button>
-                </VStack>
-
-                <Divider />
-
-                <VStack spacing={3} w="full">
-                  <Button
-                    variant="outline"
-                    colorScheme="red"
-                    onClick={leaveRoom}
-                    w="full"
-                  >
-                    Leave Room
-                  </Button>
-                </VStack>
               </VStack>
             </CardBody>
           </Card>
         </Grid>
       </VStack>
     );
-  }
-
-  // Render game screen
-  if (gameState === 'playing') {
-    return (
-      <VStack spacing={6} maxW="1200px" mx="auto">
-        <HStack justify="space-between" w="full" flexWrap="wrap">
-          <VStack align="start" spacing={1}>
-            <Heading size="md">UNO-Like Game</Heading>
-            <Text fontSize="sm" color="gray.500">Room: {roomId}</Text>
-          </VStack>
-          <HStack spacing={2}>
-            <Button size="sm" variant="outline" onClick={() => setGameState('lobby')}>
-              Back to Lobby
-            </Button>
-            <Button size="sm" variant="outline" onClick={leaveRoom}>
-              Leave Game
-            </Button>
-          </HStack>
-        </HStack>
-
-        {/* Game Board */}
-        <Grid templateColumns={{ base: '1fr', lg: '300px 1fr 300px' }} gap={6} w="full">
-          {/* Other Players */}
-          <Card>
-            <CardHeader>
-              <Heading size="sm">Other Players</Heading>
-            </CardHeader>
-            <CardBody>
-              <VStack spacing={2} align="stretch">
-                {room.players
-                  .filter(p => p.id !== currentPlayer?.id)
-                  .map((player) => (
-                    <Box
-                      key={player.id}
-                      p={2}
-                      borderRadius="md"
-                      bg="gray.50"
-                      border="1px"
-                      borderColor={borderColor}
-                    >
-                      <HStack justify="space-between">
-                        <VStack align="start" spacing={0}>
-                          <Text fontSize="sm" fontWeight="medium">
-                            {player.username}
-                          </Text>
-                          <Text fontSize="xs" color="gray.500">
-                            {player.handCount} cards
-                          </Text>
-                        </VStack>
-                      </HStack>
-                    </Box>
-                  ))}
-              </VStack>
-            </CardBody>
-          </Card>
-
-          {/* Game Center */}
-          <VStack spacing={4}>
-            <Card w="full">
-              <CardBody textAlign="center">
-                <VStack spacing={4}>
-                  <Text fontSize="lg" fontWeight="bold">Current Card</Text>
-                  
-                  {currentCard && (
-                    <Box
-                      w="120px"
-                      h="160px"
-                      bg={getCardColor(currentCard)}
-                      borderRadius="lg"
-                      display="flex"
-                      alignItems="center"
-                      justifyContent="center"
-                      color="white"
-                      fontWeight="bold"
-                      fontSize="xl"
-                      border="3px solid"
-                      borderColor="white"
-                      boxShadow="lg"
-                    >
-                      {getCardDisplayText(currentCard)}
-                    </Box>
-                  )}
-                  
-                  <HStack spacing={2}>
-                    <Badge colorScheme="blue">
-                      Direction: Clockwise
-                    </Badge>
-                    <Badge colorScheme="purple">
-                      Cards in deck: 47
-                    </Badge>
-                  </HStack>
-                </VStack>
-              </CardBody>
-            </Card>
-
-            {/* Action Buttons */}
-            <HStack spacing={2}>
-              <Button colorScheme="blue" size="sm">
-                Draw Card
-              </Button>
-              <Button colorScheme="red" size="sm">
-                UNO!
-              </Button>
-              <Button colorScheme="purple" size="sm" variant="outline">
-                Challenge
-              </Button>
-            </HStack>
-          </VStack>
-
-          {/* Game Info */}
-          <Card>
-            <CardHeader>
-              <Heading size="sm">Game Info</Heading>
-            </CardHeader>
-            <CardBody>
-              <VStack spacing={3} align="stretch">
-                <Box>
-                  <Text fontSize="sm" fontWeight="medium" mb={1}>Turn Order</Text>
-                  <Text fontSize="xs" color="gray.500">
-                    {turnOrder.map((playerId) => {
-                      const player = room.players.find(p => p.id === playerId);
-                      return (
-                        <Badge
-                          key={playerId}
-                          colorScheme="gray"
-                          mr={1}
-                          mb={1}
-                        >
-                          {player?.username || 'Unknown'}
-                        </Badge>
-                      );
-                    })}
-                  </Text>
-                </Box>
-
-                <Box>
-                  <Text fontSize="sm" fontWeight="medium" mb={1}>Game Rules</Text>
-                  <List spacing={1} fontSize="xs" color="gray.500">
-                    <ListItem>
-                      <ListIcon as={FaGamepad} color="blue.500" />
-                      Match color or number
-                    </ListItem>
-                    <ListItem>
-                      <ListIcon as={FaGamepad} color="blue.500" />
-                      Use action cards strategically
-                    </ListItem>
-                    <ListItem>
-                      <ListIcon as={FaGamepad} color="blue.500" />
-                      Call "UNO" with 1 card left
-                    </ListItem>
-                    <ListItem>
-                      <ListIcon as={FaGamepad} color="blue.500" />
-                      First to empty hand wins
-                    </ListItem>
-                  </List>
-                </Box>
-
-                <Box>
-                  <Text fontSize="sm" fontWeight="medium" mb={1}>Special Features</Text>
-                  <List spacing={1} fontSize="xs" color="gray.500">
-                    <ListItem>
-                      <ListIcon as={FaSync} color="purple.500" />
-                      Power cards enabled
-                    </ListItem>
-                    <ListItem>
-                      <ListIcon as={FaRandom} color="purple.500" />
-                      Challenge system
-                    </ListItem>
-                  </List>
-                </Box>
-              </VStack>
-            </CardBody>
-          </Card>
-        </Grid>
-
-        {/* Player Hand */}
-        <Card w="full">
-          <CardHeader>
-            <HStack justify="space-between">
-              <Heading size="sm">Your Hand ({playerHand.length} cards)</Heading>
-              <Badge colorScheme={currentTurn === 0 ? 'green' : 'gray'}>
-                {currentTurn === 0 ? 'Your Turn' : 'Waiting'}
-              </Badge>
-            </HStack>
-          </CardHeader>
-          <CardBody>
-            <HStack spacing={2} overflowX="auto" pb={2}>
-              {playerHand.map((card) => (
-                <Box
-                  key={card.id}
-                  w="80px"
-                  h="100px"
-                  bg={getCardColor(card)}
-                  borderRadius="md"
-                  display="flex"
-                  alignItems="center"
-                  justifyContent="center"
-                  color="white"
-                  fontWeight="bold"
-                  fontSize="sm"
-                  border="2px solid"
-                  borderColor="white"
-                  cursor="pointer"
-                  transition="transform 0.2s"
-                  _hover={{ transform: 'translateY(-4px)' }}
-                  flexShrink={0}
-                >
-                  {getCardDisplayText(card)}
-                </Box>
-              ))}
-              
-              {playerHand.length === 0 && (
-                <Box
-                  w="full"
-                  h="100px"
-                  borderRadius="md"
-                  border="2px dashed"
-                  borderColor="gray.300"
-                  display="flex"
-                  alignItems="center"
-                  justifyContent="center"
-                  color="gray.500"
-                >
-                  <Text fontSize="sm">No cards in hand</Text>
-                </Box>
-              )}
-            </HStack>
-          </CardBody>
-        </Card>
-      </VStack>
-    );
-  }
-
-  return null;
 };
 
 export default UnoLikeRoom;
