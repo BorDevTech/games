@@ -146,7 +146,7 @@ const UnoLikeRoom: React.FC<UnoLikeRoomProps> = ({ roomId, initialRoom, onRoomDe
     const handleStorageChange = (event: StorageEvent) => {
       if (event.key === 'unolike_rooms' && event.newValue && currentPlayer) {
         // Storage was updated from another tab, reload room data
-        const updatedRoom = roomManager.getRoom(roomId);
+        const updatedRoom = roomManager.getRoom(roomId, true);
         if (updatedRoom) {
           const roomChanged = JSON.stringify(room) !== JSON.stringify(updatedRoom);
           if (roomChanged) {
@@ -181,7 +181,7 @@ const UnoLikeRoom: React.FC<UnoLikeRoomProps> = ({ roomId, initialRoom, onRoomDe
     const interval = setInterval(() => {
       if (currentPlayer) {
         roomManager.updatePlayerActivity(roomId, currentPlayer.id);
-        const updatedRoom = roomManager.getRoom(roomId);
+        const updatedRoom = roomManager.getRoom(roomId, true);
         if (updatedRoom) {
           // Check if the room data has actually changed before updating state
           const roomChanged = JSON.stringify(room) !== JSON.stringify(updatedRoom);
