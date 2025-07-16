@@ -63,29 +63,85 @@ const UnoLikeRoom: React.FC<UnoLikeRoomProps> = ({ roomId, initialRoom, onRoomDe
   // State
   const [room, setRoom] = useState<Room>(initialRoom);
   const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null);
+  const [isInQueue, setIsInQueue] = useState<boolean>(false);
   const [gameState, setGameState] = useState<GameState>('lobby');
   const [playerHand, setPlayerHand] = useState<Card[]>([]);
   const [currentCard, setCurrentCard] = useState<Card | null>(null);
   const [turnOrder, setTurnOrder] = useState<string[]>([]);
   const [currentTurn, setCurrentTurn] = useState<number>(0);
 
-  // Join the room if no current player
+  // Initialize current player from URL or local storage
   useEffect(() => {
     if (!currentPlayer) {
-      // For demo purposes, create a demo player
-      // In a real app, this would come from user authentication
-      const demoPlayer: Omit<Player, 'isHost' | 'joinedAt' | 'lastActivity'> = {
-        id: Math.random().toString(36).substring(2, 15),
-        username: `Player${Math.floor(Math.random() * 1000)}`,
+      // Try to get player info from localStorage first
+      const storedPlayerId = localStorage.getItem(`player_${roomId}`);
+      const storedPlayerName = localStorage.getItem('player_name') || '';
+      
+      if (storedPlayerId && storedPlayerName) {
+        // Check if this player is already in the room
+        const existingPlayer = room.players.find(p => p.id === storedPlayerId);
+        if (existingPlayer) {
+          setCurrentPlayer(existingPlayer);
+          return;
+        }
+      }
+      
+      // If no stored player or player not in room, prompt for player name
+      const playerName = prompt('Enter your name to join the room:');
+      if (!playerName?.trim()) {
+        // User cancelled or entered empty name
+        router.push('/games/04');
+        return;
+      }
+      
+      const playerId = Math.random().toString(36).substring(2, 15);
+      const newPlayer: Omit<Player, 'isHost' | 'joinedAt' | 'lastActivity'> = {
+        id: playerId,
+        username: playerName.trim(),
         handCount: 0,
         status: 'waiting',
         ready: false
       };
 
-      const result = roomManager.joinRoom(roomId, demoPlayer);
+      const result = roomManager.joinRoom(roomId, newPlayer);
       if (result.success && result.room) {
         setRoom(result.room);
-        setCurrentPlayer(result.room.players.find(p => p.id === demoPlayer.id) || null);
+        
+        if (result.inQueue) {
+          // Player was added to queue
+          setIsInQueue(true);
+          const queuedPlayer = result.room.waitingQueue.find(p => p.id === playerId);
+          setCurrentPlayer(queuedPlayer || null);
+          
+          // Store player info for this session
+          localStorage.setItem(`player_${roomId}`, playerId);
+          localStorage.setItem('player_name', playerName.trim());
+          
+          toast({
+            title: "Added to queue",
+            description: `Room is full. You are #${result.room.waitingQueue.length} in the waiting queue.`,
+            status: "info",
+            duration: 5000,
+            isClosable: true
+          });
+        } else {
+          // Player joined directly
+          setIsInQueue(false);
+          const joinedPlayer = result.room.players.find(p => p.id === playerId);
+          setCurrentPlayer(joinedPlayer || null);
+          
+          // Store player info for this session
+          localStorage.setItem(`player_${roomId}`, playerId);
+          localStorage.setItem('player_name', playerName.trim());
+          
+          toast({
+            title: "Joined room!",
+            description: `Welcome to ${result.room.name}`,
+            status: "success",
+            duration: 3000,
+            isClosable: true
+          });
+        }
       } else {
         toast({
           title: "Failed to join room",
@@ -94,9 +150,11 @@ const UnoLikeRoom: React.FC<UnoLikeRoomProps> = ({ roomId, initialRoom, onRoomDe
           duration: 3000,
           isClosable: true
         });
+        // Redirect back to main game page
+        router.push('/games/04');
       }
     }
-  }, [roomId, currentPlayer, toast]);
+  }, [roomId, currentPlayer, room.players, router, toast]);
 
   // Periodic room updates (in a real app, this would be WebSocket updates)
   useEffect(() => {
@@ -105,7 +163,25 @@ const UnoLikeRoom: React.FC<UnoLikeRoomProps> = ({ roomId, initialRoom, onRoomDe
         roomManager.updatePlayerActivity(roomId, currentPlayer.id);
         const updatedRoom = roomManager.getRoom(roomId);
         if (updatedRoom) {
-          setRoom(updatedRoom);
+          // Check if the room data has actually changed before updating state
+          const roomChanged = JSON.stringify(room) !== JSON.stringify(updatedRoom);
+          if (roomChanged) {
+            setRoom(updatedRoom);
+            // Update current player if their status changed
+            let updatedCurrentPlayer = updatedRoom.players.find(p => p.id === currentPlayer.id);
+            
+            // If not in main players, check queue
+            if (!updatedCurrentPlayer) {
+              updatedCurrentPlayer = updatedRoom.waitingQueue.find(p => p.id === currentPlayer.id);
+              setIsInQueue(true);
+            } else {
+              setIsInQueue(false);
+            }
+            
+            if (updatedCurrentPlayer && JSON.stringify(currentPlayer) !== JSON.stringify(updatedCurrentPlayer)) {
+              setCurrentPlayer(updatedCurrentPlayer);
+            }
+          }
         } else {
           // Room was deleted
           if (onRoomDeleted) {
@@ -113,10 +189,10 @@ const UnoLikeRoom: React.FC<UnoLikeRoomProps> = ({ roomId, initialRoom, onRoomDe
           }
         }
       }
-    }, 10000); // Update every 10 seconds
+    }, 3000); // Update every 3 seconds for better responsiveness
 
     return () => clearInterval(interval);
-  }, [roomId, currentPlayer, onRoomDeleted]);
+  }, [roomId, currentPlayer, onRoomDeleted, room]);
 
   // Copy room code to clipboard
   const copyRoomCode = async () => {
@@ -153,26 +229,37 @@ const UnoLikeRoom: React.FC<UnoLikeRoomProps> = ({ roomId, initialRoom, onRoomDe
 
   // Toggle player ready status
   const toggleReady = () => {
-    if (!currentPlayer) return;
+    if (!currentPlayer || isInQueue) return;
     
     const newReady = !currentPlayer.ready;
-    setCurrentPlayer(prev => prev ? { ...prev, ready: newReady } : null);
     
-    // Update room
-    const updatedRoom = { ...room };
-    const playerIndex = updatedRoom.players.findIndex(p => p.id === currentPlayer.id);
-    if (playerIndex !== -1) {
-      updatedRoom.players[playerIndex].ready = newReady;
-      setRoom(updatedRoom);
+    // Update ready status through room manager
+    const result = roomManager.updatePlayerReady(roomId, currentPlayer.id, newReady);
+    
+    if (result.success && result.room) {
+      setRoom(result.room);
+      // Update current player state
+      const updatedPlayer = result.room.players.find(p => p.id === currentPlayer.id);
+      if (updatedPlayer) {
+        setCurrentPlayer(updatedPlayer);
+      }
+      
+      toast({
+        title: newReady ? "Ready!" : "Not ready",
+        description: newReady ? "You are ready to play" : "You are not ready",
+        status: newReady ? "success" : "info",
+        duration: 2000,
+        isClosable: true
+      });
+    } else {
+      toast({
+        title: "Error",
+        description: result.error || "Failed to update ready status",
+        status: "error",
+        duration: 3000,
+        isClosable: true
+      });
     }
-    
-    toast({
-      title: newReady ? "Ready!" : "Not ready",
-      description: newReady ? "You are ready to play" : "You are not ready",
-      status: newReady ? "success" : "info",
-      duration: 2000,
-      isClosable: true
-    });
   };
 
   // Start the game
@@ -367,6 +454,11 @@ const UnoLikeRoom: React.FC<UnoLikeRoomProps> = ({ roomId, initialRoom, onRoomDe
               <Heading size="md">
                 Players ({room.players.length}/{room.maxPlayers})
               </Heading>
+              {room.waitingQueue.length > 0 && (
+                <Text fontSize="sm" color="gray.500">
+                  + {room.waitingQueue.length} in queue
+                </Text>
+              )}
             </CardHeader>
             <CardBody>
               <VStack spacing={3} align="stretch">
@@ -392,6 +484,9 @@ const UnoLikeRoom: React.FC<UnoLikeRoomProps> = ({ roomId, initialRoom, onRoomDe
                                 </Box>
                               </Tooltip>
                             )}
+                            {currentPlayer?.id === player.id && (
+                              <Badge colorScheme="blue" size="sm">You</Badge>
+                            )}
                           </HStack>
                           <Text fontSize="xs" color="gray.500">
                             {player.status}
@@ -404,6 +499,46 @@ const UnoLikeRoom: React.FC<UnoLikeRoomProps> = ({ roomId, initialRoom, onRoomDe
                     </HStack>
                   </Box>
                 ))}
+                
+                {/* Show waiting queue */}
+                {room.waitingQueue.length > 0 && (
+                  <>
+                    <Divider />
+                    <Text fontSize="sm" fontWeight="medium" color="gray.600">
+                      Waiting Queue ({room.waitingQueue.length})
+                    </Text>
+                    {room.waitingQueue.map((player, index) => (
+                      <Box
+                        key={player.id}
+                        p={3}
+                        borderRadius="md"
+                        bg="orange.50"
+                        border="1px"
+                        borderColor="orange.200"
+                      >
+                        <HStack justify="space-between">
+                          <HStack spacing={2}>
+                            <Avatar size="sm" name={player.username} />
+                            <VStack align="start" spacing={0}>
+                              <HStack spacing={1}>
+                                <Text fontWeight="medium">{player.username}</Text>
+                                {currentPlayer?.id === player.id && (
+                                  <Badge colorScheme="blue" size="sm">You</Badge>
+                                )}
+                              </HStack>
+                              <Text fontSize="xs" color="gray.500">
+                                Position #{index + 1} in queue
+                              </Text>
+                            </VStack>
+                          </HStack>
+                          <Badge colorScheme="orange">
+                            Waiting
+                          </Badge>
+                        </HStack>
+                      </Box>
+                    ))}
+                  </>
+                )}
               </VStack>
             </CardBody>
           </Card>
@@ -415,58 +550,84 @@ const UnoLikeRoom: React.FC<UnoLikeRoomProps> = ({ roomId, initialRoom, onRoomDe
             </CardHeader>
             <CardBody>
               <VStack spacing={4}>
-                {currentPlayer?.isHost && (
+                {isInQueue ? (
                   <VStack spacing={3} w="full">
-                    <Text fontSize="sm" color="gray.500" textAlign="center">
-                      Host Controls
+                    <Text fontSize="sm" color="orange.500" textAlign="center" fontWeight="medium">
+                      You are in the waiting queue
+                    </Text>
+                    <Text fontSize="xs" color="gray.500" textAlign="center">
+                      You'll be moved to the game when a spot becomes available
                     </Text>
                     <Button
-                      colorScheme="green"
-                      size="lg"
-                      leftIcon={<FaPlay />}
-                      onClick={startGame}
+                      variant="outline"
+                      colorScheme="red"
+                      onClick={leaveRoom}
                       w="full"
-                      isDisabled={
-                        !room.players.some(p => p.id !== currentPlayer.id) ||
-                        room.players.filter(p => p.status === 'waiting').length < 2
-                      }
                     >
-                      Start Game
+                      Leave Queue
                     </Button>
-                    <Text fontSize="xs" color="gray.500" textAlign="center">
-                      Need at least 2 players to start
-                    </Text>
                   </VStack>
+                ) : (
+                  <>
+                    {currentPlayer?.isHost && (
+                      <VStack spacing={3} w="full">
+                        <Text fontSize="sm" color="gray.500" textAlign="center">
+                          Host Controls
+                        </Text>
+                        <Button
+                          colorScheme="green"
+                          size="lg"
+                          leftIcon={<FaPlay />}
+                          onClick={startGame}
+                          w="full"
+                          isDisabled={
+                            !room.players.some(p => p.id !== currentPlayer.id) ||
+                            room.players.filter(p => p.status === 'waiting').length < 2
+                          }
+                        >
+                          Start Game
+                        </Button>
+                        <Text fontSize="xs" color="gray.500" textAlign="center">
+                          Need at least 2 players to start
+                        </Text>
+                        {room.players.filter(p => p.ready && p.status === 'waiting').length > 0 && (
+                          <Text fontSize="xs" color="green.500" textAlign="center">
+                            {room.players.filter(p => p.ready && p.status === 'waiting').length} players ready
+                          </Text>
+                        )}
+                      </VStack>
+                    )}
+
+                    <Divider />
+
+                    <VStack spacing={3} w="full">
+                      <Text fontSize="sm" color="gray.500" textAlign="center">
+                        Player Controls
+                      </Text>
+                      <Button
+                        colorScheme={currentPlayer?.ready ? 'red' : 'blue'}
+                        variant={currentPlayer?.ready ? 'outline' : 'solid'}
+                        onClick={toggleReady}
+                        w="full"
+                      >
+                        {currentPlayer?.ready ? 'Not Ready' : 'Ready'}
+                      </Button>
+                    </VStack>
+
+                    <Divider />
+
+                    <VStack spacing={3} w="full">
+                      <Button
+                        variant="outline"
+                        colorScheme="red"
+                        onClick={leaveRoom}
+                        w="full"
+                      >
+                        Leave Room
+                      </Button>
+                    </VStack>
+                  </>
                 )}
-
-                <Divider />
-
-                <VStack spacing={3} w="full">
-                  <Text fontSize="sm" color="gray.500" textAlign="center">
-                    Player Controls
-                  </Text>
-                  <Button
-                    colorScheme={currentPlayer?.ready ? 'red' : 'blue'}
-                    variant={currentPlayer?.ready ? 'outline' : 'solid'}
-                    onClick={toggleReady}
-                    w="full"
-                  >
-                    {currentPlayer?.ready ? 'Not Ready' : 'Ready'}
-                  </Button>
-                </VStack>
-
-                <Divider />
-
-                <VStack spacing={3} w="full">
-                  <Button
-                    variant="outline"
-                    colorScheme="red"
-                    onClick={leaveRoom}
-                    w="full"
-                  >
-                    Leave Room
-                  </Button>
-                </VStack>
               </VStack>
             </CardBody>
           </Card>

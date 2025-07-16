@@ -33,6 +33,7 @@ export interface Room {
   lastActivity: Date;
   gameStartedAt?: Date;
   gameEndedAt?: Date;
+  waitingQueue: Player[]; // Queue for players waiting to join when room is full
 }
 
 // Types for localStorage serialization
@@ -61,6 +62,7 @@ interface SerializedRoom {
   lastActivity: string;
   gameStartedAt?: string;
   gameEndedAt?: string;
+  waitingQueue: SerializedPlayer[];
 }
 
 class RoomManager {
@@ -98,7 +100,8 @@ class RoomManager {
       inGame: false,
       settings: { ...settings },
       createdAt: new Date(),
-      lastActivity: new Date()
+      lastActivity: new Date(),
+      waitingQueue: []
     };
     
     this.rooms.set(roomId, room);
@@ -123,19 +126,38 @@ class RoomManager {
   }
 
   // Join a room
-  joinRoom(roomId: string, player: Omit<Player, 'isHost' | 'joinedAt' | 'lastActivity'>): { success: boolean; room?: Room; error?: string } {
+  joinRoom(roomId: string, player: Omit<Player, 'isHost' | 'joinedAt' | 'lastActivity'>): { success: boolean; room?: Room; error?: string; inQueue?: boolean } {
     const room = this.getRoom(roomId);
     
     if (!room) {
       return { success: false, error: 'Room not found' };
     }
 
-    if (room.players.length >= room.maxPlayers) {
-      return { success: false, error: 'Room is full' };
-    }
-
     if (room.players.some(p => p.username === player.username)) {
       return { success: false, error: 'Username already taken in this room' };
+    }
+
+    // Check if room is full
+    if (room.players.length >= room.maxPlayers) {
+      // Check if player is already in queue
+      if (room.waitingQueue.some(p => p.username === player.username)) {
+        return { success: false, error: 'Already in waiting queue' };
+      }
+      
+      // Add to waiting queue
+      const queuePlayer: Player = {
+        ...player,
+        isHost: false,
+        joinedAt: new Date(),
+        lastActivity: new Date(),
+        status: 'in_queue'
+      };
+      
+      room.waitingQueue.push(queuePlayer);
+      room.lastActivity = new Date();
+      this.saveRooms();
+      
+      return { success: true, room, inQueue: true };
     }
 
     const newPlayer: Player = {
@@ -160,43 +182,99 @@ class RoomManager {
       return { success: false };
     }
 
+    // Check if player is in main room
     const playerIndex = room.players.findIndex(p => p.id === playerId);
-    if (playerIndex === -1) {
-      return { success: false };
-    }
+    if (playerIndex !== -1) {
+      const leavingPlayer = room.players[playerIndex];
+      room.players.splice(playerIndex, 1);
+      room.lastActivity = new Date();
 
-    const leavingPlayer = room.players[playerIndex];
-    room.players.splice(playerIndex, 1);
-    room.lastActivity = new Date();
+      // If no players left, delete the room
+      if (room.players.length === 0 && room.waitingQueue.length === 0) {
+        this.rooms.delete(roomId);
+        this.saveRooms();
+        return { success: true, roomDeleted: true };
+      }
 
-    // If no players left, delete the room
-    if (room.players.length === 0) {
-      this.rooms.delete(roomId);
+      // If the host left, assign new host
+      if (leavingPlayer.isHost && room.players.length > 0) {
+        room.players[0].isHost = true;
+        room.hostId = room.players[0].id;
+      }
+
+      // Move next queued player to main room if there's space
+      if (room.waitingQueue.length > 0 && room.players.length < room.maxPlayers) {
+        const nextPlayer = room.waitingQueue.shift()!;
+        nextPlayer.status = 'waiting';
+        room.players.push(nextPlayer);
+      }
+
       this.saveRooms();
-      return { success: true, roomDeleted: true };
+      return { success: true, room };
+    }
+    
+    // Check if player is in queue
+    const queueIndex = room.waitingQueue.findIndex(p => p.id === playerId);
+    if (queueIndex !== -1) {
+      room.waitingQueue.splice(queueIndex, 1);
+      room.lastActivity = new Date();
+      
+      // If no players left, delete the room
+      if (room.players.length === 0 && room.waitingQueue.length === 0) {
+        this.rooms.delete(roomId);
+        this.saveRooms();
+        return { success: true, roomDeleted: true };
+      }
+      
+      this.saveRooms();
+      return { success: true, room };
     }
 
-    // If the host left, assign new host
-    if (leavingPlayer.isHost && room.players.length > 0) {
-      room.players[0].isHost = true;
-      room.hostId = room.players[0].id;
-    }
-
-    this.saveRooms();
-    return { success: true, room };
+    return { success: false };
   }
 
   // Update player activity
   updatePlayerActivity(roomId: string, playerId: string): void {
     const room = this.getRoom(roomId);
     if (room) {
+      // Check main players first
       const player = room.players.find(p => p.id === playerId);
       if (player) {
         player.lastActivity = new Date();
         room.lastActivity = new Date();
         this.saveRooms();
+        return;
+      }
+      
+      // Check waiting queue
+      const queuedPlayer = room.waitingQueue.find(p => p.id === playerId);
+      if (queuedPlayer) {
+        queuedPlayer.lastActivity = new Date();
+        room.lastActivity = new Date();
+        this.saveRooms();
       }
     }
+  }
+
+  // Update player ready status
+  updatePlayerReady(roomId: string, playerId: string, ready: boolean): { success: boolean; room?: Room; error?: string } {
+    const room = this.getRoom(roomId);
+    
+    if (!room) {
+      return { success: false, error: 'Room not found' };
+    }
+
+    const player = room.players.find(p => p.id === playerId);
+    if (!player) {
+      return { success: false, error: 'Player not found in room' };
+    }
+
+    player.ready = ready;
+    player.lastActivity = new Date();
+    room.lastActivity = new Date();
+    this.saveRooms();
+    
+    return { success: true, room };
   }
 
   // Start game
@@ -359,6 +437,11 @@ class RoomManager {
             gameStartedAt: room.gameStartedAt ? new Date(room.gameStartedAt) : undefined,
             gameEndedAt: room.gameEndedAt ? new Date(room.gameEndedAt) : undefined,
             players: room.players.map((player: SerializedPlayer): Player => ({
+              ...player,
+              joinedAt: new Date(player.joinedAt),
+              lastActivity: new Date(player.lastActivity)
+            })),
+            waitingQueue: (room.waitingQueue || []).map((player: SerializedPlayer): Player => ({
               ...player,
               joinedAt: new Date(player.joinedAt),
               lastActivity: new Date(player.lastActivity)
