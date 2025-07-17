@@ -76,8 +76,10 @@ class SessionManager {
             lastActivity: new Date(data.session.lastActivity)
           };
           
-          // Establish real-time connection
-          await this.connectRealTime();
+          // Establish real-time connection (non-blocking)
+          this.connectRealTime().catch(error => {
+            console.warn('Real-time connection failed, continuing without WebSocket:', error);
+          });
           
           return this.currentSession;
         }

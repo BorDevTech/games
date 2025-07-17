@@ -64,16 +64,16 @@ class RealTimeClient {
 
     try {
       const wsUrl = this.getWebSocketUrl();
-      console.log('Connecting to WebSocket:', wsUrl);
+      console.log('Attempting WebSocket connection:', wsUrl);
 
       this.ws = new WebSocket(wsUrl);
 
       return new Promise((resolve) => {
         const connectionTimeout = setTimeout(() => {
-          console.error('WebSocket connection timeout');
+          console.warn('WebSocket connection timeout - falling back to polling');
           this.handleConnectionFailure();
           resolve(false);
-        }, 10000); // 10 second timeout
+        }, 5000); // Reduced timeout to 5 seconds
 
         this.ws!.onopen = () => {
           clearTimeout(connectionTimeout);
@@ -100,23 +100,22 @@ class RealTimeClient {
 
         this.ws!.onerror = (error) => {
           clearTimeout(connectionTimeout);
-          console.error('WebSocket error:', error);
+          console.warn('WebSocket connection error - this is normal if WebSocket server is not available:', error);
           this.handleConnectionFailure();
           resolve(false);
         };
       });
     } catch (error) {
-      console.error('Failed to create WebSocket connection:', error);
+      console.warn('WebSocket connection failed - using fallback polling:', error);
       this.handleConnectionFailure();
       return false;
     }
   }
 
   private getWebSocketUrl(): string {
-    // Determine WebSocket URL based on environment
+    // Use the same host and port as the current page to avoid CORS issues
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.hostname;
-    const port = process.env.NODE_ENV === 'development' ? '8080' : window.location.port;
+    const host = window.location.host; // This includes port if present
     
     const params = new URLSearchParams({
       playerId: this.playerId!,
@@ -124,7 +123,8 @@ class RealTimeClient {
       sessionId: this.sessionId!
     });
 
-    return `${protocol}//${host}:${port}/api/websocket?${params}`;
+    // Try to connect through the Next.js API route first
+    return `${protocol}//${host}/api/websocket?${params}`;
   }
 
   // Handle incoming messages
