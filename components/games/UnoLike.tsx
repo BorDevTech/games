@@ -82,6 +82,7 @@ const UnoLike: React.FC = () => {
   
   // Session manager for persistent player identity
   const [isInitialized, setIsInitialized] = useState(false);
+  const [isSessionActive, setIsSessionActive] = useState(false);
   const [sessionInfo, setSessionInfo] = useState<string>('');
   
   // Initialize session on component mount and load existing username
@@ -92,36 +93,36 @@ const UnoLike: React.FC = () => {
         const { default: sessionManager } = await import('@/lib/sessionManager');
         const session = await sessionManager.initializeSession();
         
-        // If session exists and has a username, populate the field
-        if (session && session.username && !playerName) {
+        // If session exists and has a username, populate the field and mark as active
+        if (session && session.username) {
           setPlayerName(session.username);
-        }
-        
-        // Set session info for display
-        if (session) {
+          setIsSessionActive(true);
+          
           const sessionAge = Math.floor((Date.now() - session.createdAt.getTime()) / (1000 * 60));
-          setSessionInfo(`Session active (${sessionAge}m old)`);
+          setSessionInfo(`Active session for "${session.username}" (${sessionAge}m old)`);
         } else {
-          setSessionInfo('New session will be created');
+          setIsSessionActive(false);
+          setSessionInfo('Enter your name to create a session');
         }
         
         setIsInitialized(true);
       } catch (error) {
         console.error('Failed to initialize session:', error);
         setSessionInfo('Session initialization failed - using fallback');
+        setIsSessionActive(false);
         setIsInitialized(true); // Still allow app to work
       }
     };
     
     initSession();
-  }, [playerName]);
+  }, []); // Remove playerName dependency to avoid loops
   
-  // Create a new room
-  const createRoom = async (type: RoomType = 'public') => {
+  // Create session immediately when player confirms their name
+  const confirmPlayerName = async () => {
     if (!playerName.trim()) {
       toast({
         title: "Enter your name",
-        description: "Please enter your name to create a room",
+        description: "Please enter your name to create a session",
         status: "warning",
         duration: 3000,
         isClosable: true
@@ -132,7 +133,7 @@ const UnoLike: React.FC = () => {
     if (!isInitialized) {
       toast({
         title: "Please wait",
-        description: "Initializing session...",
+        description: "Initializing...",
         status: "info",
         duration: 2000,
         isClosable: true
@@ -143,12 +144,56 @@ const UnoLike: React.FC = () => {
     try {
       const trimmedName = playerName.trim();
       
-      // Get player info from session manager
+      // Create session immediately
       const { default: sessionManager } = await import('@/lib/sessionManager');
-      const playerInfo = await sessionManager.getPlayerInfo(trimmedName);
+      const session = await sessionManager.createOrUpdateSession(trimmedName);
+      
+      if (session) {
+        setIsSessionActive(true);
+        setSessionInfo(`Active session for "${session.username}"`);
+        
+        toast({
+          title: "Session created!",
+          description: `Welcome, ${session.username}! You can now join or create rooms.`,
+          status: "success",
+          duration: 3000,
+          isClosable: true
+        });
+      } else {
+        throw new Error('Failed to create session');
+      }
+    } catch (error) {
+      console.error('Failed to create session:', error);
+      toast({
+        title: "Failed to create session",
+        description: "Please try again",
+        status: "error",
+        duration: 3000,
+        isClosable: true
+      });
+    }
+  };
+  
+  // Create a new room
+  const createRoom = async (type: RoomType = 'public') => {
+    if (!isSessionActive) {
+      toast({
+        title: "No active session",
+        description: "Please confirm your name first to create a session",
+        status: "warning",
+        duration: 3000,
+        isClosable: true
+      });
+      return;
+    }
+    
+    try {
+      // Get player info from existing session
+      const { default: sessionManager } = await import('@/lib/sessionManager');
+      const playerInfo = await sessionManager.getPlayerInfo();
       
       if (!playerInfo) {
-        throw new Error('Failed to create player session');
+        throw new Error('Session expired or invalid');
       }
       
       const newPlayer = {
@@ -180,7 +225,7 @@ const UnoLike: React.FC = () => {
       console.error('Failed to create room:', error);
       toast({
         title: "Failed to create room",
-        description: "Please try again",
+        description: "Please try again or refresh your session",
         status: "error",
         duration: 3000,
         isClosable: true
@@ -190,10 +235,10 @@ const UnoLike: React.FC = () => {
   
   // Join an existing room
   const joinRoom = async (code: string = joinCode) => {
-    if (!playerName.trim()) {
+    if (!isSessionActive) {
       toast({
-        title: "Enter your name",
-        description: "Please enter your name to join a room",
+        title: "No active session",
+        description: "Please confirm your name first to create a session",
         status: "warning",
         duration: 3000,
         isClosable: true
@@ -212,27 +257,15 @@ const UnoLike: React.FC = () => {
       return;
     }
     
-    if (!isInitialized) {
-      toast({
-        title: "Please wait",
-        description: "Initializing session...",
-        status: "info",
-        duration: 2000,
-        isClosable: true
-      });
-      return;
-    }
-    
     try {
       const roomCode = code.toUpperCase();
-      const trimmedName = playerName.trim();
       
-      // Get player info from session manager
+      // Get player info from existing session
       const { default: sessionManager } = await import('@/lib/sessionManager');
-      const playerInfo = await sessionManager.getPlayerInfo(trimmedName);
+      const playerInfo = await sessionManager.getPlayerInfo();
       
       if (!playerInfo) {
-        throw new Error('Failed to create player session');
+        throw new Error('Session expired or invalid');
       }
       
       // Check if room exists and navigate to it
@@ -256,7 +289,7 @@ const UnoLike: React.FC = () => {
       console.error('Failed to join room:', error);
       toast({
         title: "Failed to join room",
-        description: "Please try again",
+        description: "Please try again or refresh your session",
         status: "error",
         duration: 3000,
         isClosable: true
@@ -266,10 +299,10 @@ const UnoLike: React.FC = () => {
   
   // Quick play - join any available public room
   const quickPlay = async () => {
-    if (!playerName.trim()) {
+    if (!isSessionActive) {
       toast({
-        title: "Enter your name",
-        description: "Please enter your name for quick play",
+        title: "No active session",
+        description: "Please confirm your name first to create a session",
         status: "warning",
         duration: 3000,
         isClosable: true
@@ -277,26 +310,13 @@ const UnoLike: React.FC = () => {
       return;
     }
     
-    if (!isInitialized) {
-      toast({
-        title: "Please wait",
-        description: "Initializing session...",
-        status: "info",
-        duration: 2000,
-        isClosable: true
-      });
-      return;
-    }
-    
     try {
-      const trimmedName = playerName.trim();
-      
-      // Get player info from session manager
+      // Get player info from existing session
       const { default: sessionManager } = await import('@/lib/sessionManager');
-      const playerInfo = await sessionManager.getPlayerInfo(trimmedName);
+      const playerInfo = await sessionManager.getPlayerInfo();
       
       if (!playerInfo) {
-        throw new Error('Failed to create player session');
+        throw new Error('Session expired or invalid');
       }
       
       // Get available public rooms
@@ -335,7 +355,7 @@ const UnoLike: React.FC = () => {
       console.error('Failed to quick play:', error);
       toast({
         title: "Failed to quick play",
-        description: "Please try again",
+        description: "Please try again or refresh your session",
         status: "error",
         duration: 3000,
         isClosable: true
@@ -364,7 +384,8 @@ const UnoLike: React.FC = () => {
       
       if (success) {
         setPlayerName('');
-        setSessionInfo('Session cleared - new session will be created');
+        setIsSessionActive(false);
+        setSessionInfo('Session cleared - enter your name to create a new session');
         toast({
           title: "Session cleared",
           description: "Your session has been reset",
@@ -443,14 +464,40 @@ const UnoLike: React.FC = () => {
           <VStack spacing={4}>
             <FormControl>
               <FormLabel>Your Name</FormLabel>
-              <Input
-                placeholder="Enter your player name"
-                value={playerName}
-                onChange={(e) => setPlayerName(e.target.value)}
-                maxLength={20}
-              />
+              <HStack spacing={2}>
+                <Input
+                  placeholder="Enter your player name"
+                  value={playerName}
+                  onChange={(e) => setPlayerName(e.target.value)}
+                  maxLength={20}
+                  isDisabled={isSessionActive}
+                />
+                {!isSessionActive ? (
+                  <Button
+                    colorScheme="blue"
+                    onClick={confirmPlayerName}
+                    isDisabled={!playerName.trim() || !isInitialized}
+                    isLoading={!isInitialized}
+                    loadingText="Wait"
+                    size="md"
+                    minW="100px"
+                  >
+                    Confirm
+                  </Button>
+                ) : (
+                  <Button
+                    colorScheme="red"
+                    variant="outline"
+                    onClick={clearSession}
+                    size="md"
+                    minW="100px"
+                  >
+                    Change
+                  </Button>
+                )}
+              </HStack>
               {sessionInfo && (
-                <Text fontSize="xs" color="gray.500" mt={1}>
+                <Text fontSize="xs" color={isSessionActive ? "green.600" : "gray.500"} mt={1}>
                   {sessionInfo}
                 </Text>
               )}
@@ -465,7 +512,7 @@ const UnoLike: React.FC = () => {
                 leftIcon={<FaRandom />}
                 onClick={quickPlay}
                 w="full"
-                isDisabled={!playerName.trim() || !isInitialized}
+                isDisabled={!isSessionActive}
                 isLoading={!isInitialized}
                 loadingText="Initializing"
               >
@@ -485,7 +532,7 @@ const UnoLike: React.FC = () => {
                 leftIcon={<FaPlus />}
                 onClick={() => createRoom('public')}
                 w="full"
-                isDisabled={!playerName.trim() || !isInitialized}
+                isDisabled={!isSessionActive}
                 isLoading={!isInitialized}
                 loadingText="Initializing"
               >
@@ -498,7 +545,7 @@ const UnoLike: React.FC = () => {
                 leftIcon={<FaKey />}
                 onClick={() => createRoom('private')}
                 w="full"
-                isDisabled={!playerName.trim() || !isInitialized}
+                isDisabled={!isSessionActive}
                 isLoading={!isInitialized}
                 loadingText="Initializing"
               >
@@ -525,7 +572,7 @@ const UnoLike: React.FC = () => {
                 size="lg"
                 w="full"
                 onClick={() => joinRoom()}
-                isDisabled={!playerName.trim() || !joinCode.trim() || !isInitialized}
+                isDisabled={!isSessionActive || !joinCode.trim()}
                 isLoading={!isInitialized}
                 loadingText="Initializing"
               >
