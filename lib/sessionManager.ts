@@ -1,5 +1,7 @@
 // Session Management Service for Cookie-Based Player Persistence
-// Handles player sessions across tabs and page refreshes
+// Handles player sessions across tabs and page refreshes with real-time integration
+
+import realTimeClient from './realTimeClient';
 
 export interface PlayerSession {
   sessionId: string;
@@ -53,7 +55,7 @@ class SessionManager {
     return null;
   }
 
-  // Create or update session with username
+  // Create or update session with username and establish real-time connection
   async createOrUpdateSession(username: string, roomId?: string): Promise<PlayerSession | null> {
     try {
       const response = await fetch('/api/sessions', {
@@ -73,6 +75,10 @@ class SessionManager {
             createdAt: new Date(data.session.createdAt),
             lastActivity: new Date(data.session.lastActivity)
           };
+          
+          // Establish real-time connection
+          await this.connectRealTime();
+          
           return this.currentSession;
         }
       } else {
@@ -114,9 +120,12 @@ class SessionManager {
     return false;
   }
 
-  // Clear session (logout)
+  // Clear session (logout) and disconnect real-time
   async clearSession(): Promise<boolean> {
     try {
+      // Disconnect real-time first
+      realTimeClient.disconnect();
+      
       const response = await fetch('/api/sessions', {
         method: 'DELETE',
         credentials: 'include', // Include cookies
@@ -170,6 +179,43 @@ class SessionManager {
   async hasActiveSession(): Promise<boolean> {
     const session = await this.getCurrentSession();
     return session !== null;
+  }
+
+  // Connect to real-time WebSocket
+  async connectRealTime(): Promise<boolean> {
+    if (!this.currentSession) {
+      console.error('No session available for real-time connection');
+      return false;
+    }
+
+    try {
+      const connected = await realTimeClient.connect(
+        this.currentSession.playerId,
+        this.currentSession.username,
+        this.currentSession.sessionId
+      );
+      
+      if (connected) {
+        console.log('Real-time connection established for', this.currentSession.username);
+      } else {
+        console.warn('Failed to establish real-time connection');
+      }
+      
+      return connected;
+    } catch (error) {
+      console.error('Error connecting to real-time:', error);
+      return false;
+    }
+  }
+
+  // Get real-time client for direct access
+  getRealTimeClient() {
+    return realTimeClient;
+  }
+
+  // Get connection status
+  getRealTimeStatus() {
+    return realTimeClient.getConnectionStatus();
   }
 
   // Get cached session (doesn't make API call)

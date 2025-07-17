@@ -1,5 +1,7 @@
 // Game State Manager for UNO-Like Game
-// Handles synchronized game state across devices
+// Handles synchronized game state across devices with real-time updates
+
+import realTimeClient from './realTimeClient';
 
 export type CardColor = 'red' | 'yellow' | 'green' | 'blue' | 'wild';
 export type CardType = 'number' | 'skip' | 'reverse' | 'draw2' | 'wild' | 'wild_draw4';
@@ -36,12 +38,19 @@ class GameStateManager {
   private readonly API_SYNC_INTERVAL = 3000; // Sync every 3 seconds (increased from 2s)
   private readonly STORAGE_KEY_PREFIX = 'unolike_game_';
   private syncEnabled = false;
+  private realTimeEnabled = false;
+  private gameStateListeners: Map<string, Set<(gameState: GameState) => void>> = new Map();
 
   constructor() {
     if (typeof window !== 'undefined') {
       this.syncEnabled = true;
-      // Start periodic API sync
+      this.realTimeEnabled = true;
+      
+      // Start periodic API sync as fallback
       setInterval(() => this.syncWithAPI(), this.API_SYNC_INTERVAL);
+      
+      // Set up real-time game action listening
+      this.setupRealTimeListeners();
     }
   }
 
@@ -101,7 +110,7 @@ class GameStateManager {
     return this.gameStates.get(roomId) || this.loadGameState(roomId);
   }
 
-  // Update game state
+  // Update game state and broadcast real-time updates
   updateGameState(roomId: string, updates: Partial<GameState>, action?: {
     type: 'play_card' | 'draw_card' | 'pass_turn' | 'start_game' | 'end_game';
     playerId: string;
@@ -122,6 +131,18 @@ class GameStateManager {
     
     this.gameStates.set(roomId, updatedState);
     this.saveGameState(roomId, updatedState);
+    
+    // Broadcast real-time update
+    if (this.realTimeEnabled && action) {
+      realTimeClient.sendGameAction(roomId, action.type, {
+        gameState: updatedState,
+        action: action,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    // Notify local listeners
+    this.notifyGameStateListeners(roomId, updatedState);
     
     return updatedState;
   }
@@ -271,6 +292,64 @@ class GameStateManager {
     // Sync each active game state
     for (const roomId of this.gameStates.keys()) {
       await this.syncGameStateFromAPI(roomId);
+    }
+  }
+
+  // Set up real-time listeners for game actions
+  private setupRealTimeListeners(): void {
+    realTimeClient.on('game_action', (message) => {
+      if (message.roomId && message.data?.gameState) {
+        const { gameState } = message.data;
+        
+        // Update local game state with real-time data
+        const gameStateData = gameState as GameState;
+        const updatedGameState: GameState = {
+          ...gameStateData,
+          syncedAt: new Date(gameStateData.syncedAt || new Date())
+        };
+        this.gameStates.set(message.roomId, updatedGameState);
+        
+        // Save to localStorage
+        this.saveGameState(message.roomId, updatedGameState);
+        
+        // Notify listeners
+        this.notifyGameStateListeners(message.roomId, updatedGameState);
+        
+        console.log('Real-time game state update received for room', message.roomId);
+      }
+    });
+  }
+
+  // Add game state listener
+  addGameStateListener(roomId: string, listener: (gameState: GameState) => void): void {
+    if (!this.gameStateListeners.has(roomId)) {
+      this.gameStateListeners.set(roomId, new Set());
+    }
+    this.gameStateListeners.get(roomId)!.add(listener);
+  }
+
+  // Remove game state listener
+  removeGameStateListener(roomId: string, listener: (gameState: GameState) => void): void {
+    const listeners = this.gameStateListeners.get(roomId);
+    if (listeners) {
+      listeners.delete(listener);
+      if (listeners.size === 0) {
+        this.gameStateListeners.delete(roomId);
+      }
+    }
+  }
+
+  // Notify all listeners for a room
+  private notifyGameStateListeners(roomId: string, gameState: GameState): void {
+    const listeners = this.gameStateListeners.get(roomId);
+    if (listeners) {
+      for (const listener of listeners) {
+        try {
+          listener(gameState);
+        } catch (error) {
+          console.error('Error in game state listener:', error);
+        }
+      }
     }
   }
 
