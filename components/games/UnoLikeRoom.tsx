@@ -76,7 +76,7 @@ const UnoLikeRoom: React.FC<UnoLikeRoomProps> = ({ roomId, initialRoom, onRoomDe
         await sessionManager.updateCurrentRoom(roomId);
         
         // Check if this player is already in the room
-        const playerCheck = roomManager.isPlayerInRoom(roomId, playerInfo.id);
+        const playerCheck = await roomManager.isPlayerInRoomWithAPIFallback(roomId, playerInfo.id);
         if (playerCheck.inRoom && playerCheck.player) {
           setCurrentPlayer(playerCheck.player);
           setIsInQueue(false);
@@ -96,7 +96,7 @@ const UnoLikeRoom: React.FC<UnoLikeRoomProps> = ({ roomId, initialRoom, onRoomDe
           ready: false
         };
 
-        const result = roomManager.joinRoom(roomId, newPlayer);
+        const result = await roomManager.joinRoomWithAPIFallback(roomId, newPlayer);
         if (result.success && result.room) {
           setRoom(result.room);
           

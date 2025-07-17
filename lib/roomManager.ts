@@ -170,10 +170,123 @@ class RoomManager {
     return room || null;
   }
 
+  // Get a room by ID with API fallback for cross-device access
+  async getRoomWithAPIFallback(roomId: string): Promise<Room | null> {
+    // First, try to get from local storage
+    const room = this.getRoom(roomId);
+    
+    if (room) {
+      return room;
+    }
+    
+    // If not found locally and API sync is enabled, check API
+    if (this.apiSyncEnabled && typeof window !== 'undefined') {
+      try {
+        const response = await fetch(`/api/rooms?roomId=${encodeURIComponent(roomId.toUpperCase())}`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && data.room) {
+            // Convert API room data to local Room format
+            const apiRoomState = data.room;
+            const convertedRoom: Room = {
+              ...apiRoomState,
+              createdAt: new Date(apiRoomState.createdAt),
+              lastActivity: new Date(apiRoomState.lastActivity),
+              gameStartedAt: apiRoomState.gameStartedAt ? new Date(apiRoomState.gameStartedAt) : undefined,
+              gameEndedAt: apiRoomState.gameEndedAt ? new Date(apiRoomState.gameEndedAt) : undefined,
+              players: apiRoomState.players.map((player: SerializedPlayer) => ({
+                ...player,
+                joinedAt: new Date(player.joinedAt),
+                lastActivity: new Date(player.lastActivity)
+              })),
+              waitingQueue: (apiRoomState.waitingQueue || []).map((player: SerializedPlayer) => ({
+                ...player,
+                joinedAt: new Date(player.joinedAt),
+                lastActivity: new Date(player.lastActivity)
+              }))
+            };
+            
+            // Add to local storage for future fast access
+            this.rooms.set(roomId.toUpperCase(), convertedRoom);
+            this.saveRoomsToLocalStorageOnly();
+            
+            return convertedRoom;
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to fetch room from API:', error);
+      }
+    }
+    
+    return null;
+  }
+
   // Check if a room exists and is accessible
   isRoomAccessible(roomId: string): boolean {
     const room = this.getRoom(roomId, true);
     return room !== null;
+  }
+
+  // Join a room with API fallback for cross-device access
+  async joinRoomWithAPIFallback(roomId: string, player: Omit<Player, 'isHost' | 'joinedAt' | 'lastActivity'>): Promise<{ success: boolean; room?: Room; error?: string; inQueue?: boolean }> {
+    // First try to get room with API fallback
+    const room = await this.getRoomWithAPIFallback(roomId);
+    
+    if (!room) {
+      return { success: false, error: 'Room not found' };
+    }
+
+    // Check for duplicate usernames (excluding AI Dealer)
+    if (room.players.some(p => p.id !== this.AI_DEALER_ID && p.username === player.username)) {
+      return { success: false, error: 'Username already taken in this room' };
+    }
+
+    // Also check waiting queue for duplicate names
+    if (room.waitingQueue.some(p => p.username === player.username)) {
+      return { success: false, error: 'Username already taken in this room' };
+    }
+
+    // Check if room is full
+    if (room.players.length >= room.maxPlayers) {
+      // Check if player is already in queue
+      if (room.waitingQueue.some(p => p.username === player.username)) {
+        return { success: false, error: 'Already in waiting queue' };
+      }
+      
+      // Add to waiting queue
+      const queuePlayer: Player = {
+        ...player,
+        isHost: false,
+        joinedAt: new Date(),
+        lastActivity: new Date(),
+        status: 'in_queue'
+      };
+      
+      room.waitingQueue.push(queuePlayer);
+      room.lastActivity = new Date();
+      
+      // Update both local and API
+      this.rooms.set(roomId.toUpperCase(), room);
+      this.saveRooms();
+      
+      return { success: true, room, inQueue: true };
+    }
+
+    const newPlayer: Player = {
+      ...player,
+      isHost: false,
+      joinedAt: new Date(),
+      lastActivity: new Date()
+    };
+
+    room.players.push(newPlayer);
+    room.lastActivity = new Date();
+    
+    // Update both local and API
+    this.rooms.set(roomId.toUpperCase(), room);
+    this.saveRooms();
+    
+    return { success: true, room };
   }
 
   // Join a room
@@ -293,6 +406,29 @@ class RoomManager {
   // Check if player exists in room (either in main room or queue)
   isPlayerInRoom(roomId: string, playerId: string): { inRoom: boolean; inQueue: boolean; player?: Player } {
     const room = this.getRoom(roomId);
+    
+    if (!room) {
+      return { inRoom: false, inQueue: false };
+    }
+
+    // Check main room
+    const mainPlayer = room.players.find(p => p.id === playerId);
+    if (mainPlayer) {
+      return { inRoom: true, inQueue: false, player: mainPlayer };
+    }
+
+    // Check waiting queue
+    const queuedPlayer = room.waitingQueue.find(p => p.id === playerId);
+    if (queuedPlayer) {
+      return { inRoom: false, inQueue: true, player: queuedPlayer };
+    }
+
+    return { inRoom: false, inQueue: false };
+  }
+
+  // Check if player exists in room with API fallback for cross-device access
+  async isPlayerInRoomWithAPIFallback(roomId: string, playerId: string): Promise<{ inRoom: boolean; inQueue: boolean; player?: Player }> {
+    const room = await this.getRoomWithAPIFallback(roomId);
     
     if (!room) {
       return { inRoom: false, inQueue: false };
