@@ -41,7 +41,9 @@ import {
   FaPlus,
   FaSignInAlt,
   FaCog,
-  FaGamepad
+  FaGamepad,
+  FaUserShield,
+  FaTrash
 } from 'react-icons/fa';
 
 // Types
@@ -63,6 +65,7 @@ const UnoLike: React.FC = () => {
   const toast = useToast();
   const { isOpen: isStatsOpen, onOpen: onStatsOpen, onClose: onStatsClose } = useDisclosure();
   const { isOpen: isSettingsOpen, onOpen: onSettingsOpen, onClose: onSettingsClose } = useDisclosure();
+  const { isOpen: isSessionOpen, onOpen: onSessionOpen, onClose: onSessionClose } = useDisclosure();
   
   // State
   const [playerName, setPlayerName] = useState<string>('');
@@ -79,23 +82,39 @@ const UnoLike: React.FC = () => {
   
   // Session manager for persistent player identity
   const [isInitialized, setIsInitialized] = useState(false);
+  const [sessionInfo, setSessionInfo] = useState<string>('');
   
-  // Initialize session on component mount
+  // Initialize session on component mount and load existing username
   useEffect(() => {
     const initSession = async () => {
       try {
         // Import session manager dynamically
         const { default: sessionManager } = await import('@/lib/sessionManager');
-        await sessionManager.initializeSession();
+        const session = await sessionManager.initializeSession();
+        
+        // If session exists and has a username, populate the field
+        if (session && session.username && !playerName) {
+          setPlayerName(session.username);
+        }
+        
+        // Set session info for display
+        if (session) {
+          const sessionAge = Math.floor((Date.now() - session.createdAt.getTime()) / (1000 * 60));
+          setSessionInfo(`Session active (${sessionAge}m old)`);
+        } else {
+          setSessionInfo('New session will be created');
+        }
+        
         setIsInitialized(true);
       } catch (error) {
         console.error('Failed to initialize session:', error);
+        setSessionInfo('Session initialization failed - using fallback');
         setIsInitialized(true); // Still allow app to work
       }
     };
     
     initSession();
-  }, []);
+  }, [playerName]);
   
   // Create a new room
   const createRoom = async (type: RoomType = 'public') => {
@@ -337,6 +356,37 @@ const UnoLike: React.FC = () => {
     localStorage.setItem('unolike_global_games', globalGamesPlayed.toString());
   }, [globalGamesPlayed]);
 
+  // Clear current session
+  const clearSession = async () => {
+    try {
+      const { default: sessionManager } = await import('@/lib/sessionManager');
+      const success = await sessionManager.clearSession();
+      
+      if (success) {
+        setPlayerName('');
+        setSessionInfo('Session cleared - new session will be created');
+        toast({
+          title: "Session cleared",
+          description: "Your session has been reset",
+          status: "success",
+          duration: 3000,
+          isClosable: true
+        });
+      } else {
+        throw new Error('Failed to clear session');
+      }
+    } catch (error) {
+      console.error('Failed to clear session:', error);
+      toast({
+        title: "Failed to clear session",
+        description: "Please try refreshing the page",
+        status: "error",
+        duration: 3000,
+        isClosable: true
+      });
+    }
+  };
+
   // Render setup screen
   if (!isInitialized) {
     return (
@@ -399,6 +449,11 @@ const UnoLike: React.FC = () => {
                 onChange={(e) => setPlayerName(e.target.value)}
                 maxLength={20}
               />
+              {sessionInfo && (
+                <Text fontSize="xs" color="gray.500" mt={1}>
+                  {sessionInfo}
+                </Text>
+              )}
             </FormControl>
 
             <Divider />
@@ -497,6 +552,14 @@ const UnoLike: React.FC = () => {
               >
                 Stats
               </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                leftIcon={<FaUserShield />}
+                onClick={onSessionOpen}
+              >
+                Session
+              </Button>
             </HStack>
           </VStack>
         </CardBody>
@@ -580,6 +643,59 @@ const UnoLike: React.FC = () => {
               </Card>
               <Text color="gray.500" fontSize="sm" textAlign="center">
                 Statistics are tracked globally across all players
+              </Text>
+            </VStack>
+          </ModalBody>
+        </ModalContent>
+      </Modal>
+
+      {/* Session Management Modal */}
+      <Modal isOpen={isSessionOpen} onClose={onSessionClose} size="lg">
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>Session Management</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody pb={6}>
+            <VStack spacing={4}>
+              <Card w="full">
+                <CardBody>
+                  <VStack spacing={3}>
+                    <Text fontSize="lg" fontWeight="bold">Current Session</Text>
+                    <Text fontSize="sm" color="gray.600" textAlign="center">
+                      {sessionInfo || 'Session information loading...'}
+                    </Text>
+                    {playerName && (
+                      <Text fontSize="md">
+                        <strong>Username:</strong> {playerName}
+                      </Text>
+                    )}
+                  </VStack>
+                </CardBody>
+              </Card>
+              
+              <Card w="full">
+                <CardBody>
+                  <VStack spacing={3}>
+                    <Text fontSize="lg" fontWeight="bold">Session Actions</Text>
+                    <Text fontSize="sm" color="gray.600" textAlign="center">
+                      Clear your session to start fresh with a new identity. This will remove your current player session across all tabs.
+                    </Text>
+                    <Button
+                      colorScheme="red"
+                      variant="outline"
+                      leftIcon={<FaTrash />}
+                      onClick={clearSession}
+                      w="full"
+                    >
+                      Clear Session
+                    </Button>
+                  </VStack>
+                </CardBody>
+              </Card>
+              
+              <Text color="gray.500" fontSize="xs" textAlign="center">
+                Session Management uses secure HTTP-only cookies for cross-tab persistence. 
+                Sessions automatically expire after 7 days of inactivity.
               </Text>
             </VStack>
           </ModalBody>

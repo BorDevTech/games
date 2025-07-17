@@ -181,6 +181,42 @@ class SessionManager {
   async initializeSession(): Promise<PlayerSession | null> {
     return this.getCurrentSession();
   }
+
+  // Recover session if possible, create anonymous session if not
+  async recoverOrCreateSession(fallbackUsername?: string): Promise<PlayerSession | null> {
+    // Try to recover existing session
+    let session = await this.getCurrentSession();
+    
+    if (!session && fallbackUsername) {
+      // Create new session with fallback username
+      session = await this.createOrUpdateSession(fallbackUsername);
+    }
+    
+    return session;
+  }
+
+  // Check if username is available in current session context
+  async isUsernameConsistent(username: string): Promise<boolean> {
+    const session = await this.getCurrentSession();
+    if (!session) return true; // No session, any username is fine
+    
+    return session.username.toLowerCase() === username.toLowerCase();
+  }
+
+  // Get session info for debugging
+  async getSessionInfo(): Promise<{ hasSession: boolean; sessionAge?: number; username?: string }> {
+    const session = await this.getCurrentSession();
+    if (!session) {
+      return { hasSession: false };
+    }
+    
+    const sessionAge = Date.now() - session.createdAt.getTime();
+    return {
+      hasSession: true,
+      sessionAge,
+      username: session.username
+    };
+  }
 }
 
 // Export singleton instance
