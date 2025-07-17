@@ -31,7 +31,8 @@ import {
   NumberInputField,
   NumberInputStepper,
   NumberIncrementStepper,
-  NumberDecrementStepper
+  NumberDecrementStepper,
+  Spinner
 } from '@chakra-ui/react';
 import { 
   FaUsers, 
@@ -76,34 +77,28 @@ const UnoLike: React.FC = () => {
   // Statistics
   const [globalGamesPlayed, setGlobalGamesPlayed] = useState<number>(0);
   
-  // Generate a persistent player ID based on username and browser fingerprint
-  const generatePlayerID = (username: string): string => {
-    // Create a browser fingerprint for consistency across sessions
-    const browserFingerprint = [
-      navigator.userAgent,
-      navigator.language,
-      screen.width + 'x' + screen.height,
-      new Date().getTimezoneOffset(),
-      // Use a timestamp that changes daily to allow for some variation
-      Math.floor(Date.now() / (1000 * 60 * 60 * 24))
-    ].join('|');
+  // Session manager for persistent player identity
+  const [isInitialized, setIsInitialized] = useState(false);
+  
+  // Initialize session on component mount
+  useEffect(() => {
+    const initSession = async () => {
+      try {
+        // Import session manager dynamically
+        const { default: sessionManager } = await import('@/lib/sessionManager');
+        await sessionManager.initializeSession();
+        setIsInitialized(true);
+      } catch (error) {
+        console.error('Failed to initialize session:', error);
+        setIsInitialized(true); // Still allow app to work
+      }
+    };
     
-    // Create a hash of username + fingerprint for consistency
-    let hash = 0;
-    const str = username.toLowerCase() + '|' + browserFingerprint;
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash; // Convert to 32-bit integer
-    }
-    
-    // Convert to base36 and ensure it's positive
-    const id = Math.abs(hash).toString(36).toUpperCase();
-    return `player_${id}`;
-  };
+    initSession();
+  }, []);
   
   // Create a new room
-  const createRoom = (type: RoomType = 'public') => {
+  const createRoom = async (type: RoomType = 'public') => {
     if (!playerName.trim()) {
       toast({
         title: "Enter your name",
@@ -115,27 +110,42 @@ const UnoLike: React.FC = () => {
       return;
     }
     
-    const trimmedName = playerName.trim();
-    const playerId = generatePlayerID(trimmedName);
+    if (!isInitialized) {
+      toast({
+        title: "Please wait",
+        description: "Initializing session...",
+        status: "info",
+        duration: 2000,
+        isClosable: true
+      });
+      return;
+    }
     
-    // Store player info for the room
-    localStorage.setItem('player_name', trimmedName);
-    localStorage.setItem('persistent_player_id', playerId);
-    
-    const newPlayer = {
-      id: playerId,
-      username: trimmedName,
-      handCount: 0,
-      status: 'waiting' as const,
-      ready: false
-    };
-    
-    // Import room manager
-    import('@/lib/roomManager').then(({ default: roomManager }) => {
+    try {
+      const trimmedName = playerName.trim();
+      
+      // Get player info from session manager
+      const { default: sessionManager } = await import('@/lib/sessionManager');
+      const playerInfo = await sessionManager.getPlayerInfo(trimmedName);
+      
+      if (!playerInfo) {
+        throw new Error('Failed to create player session');
+      }
+      
+      const newPlayer = {
+        id: playerInfo.id,
+        username: playerInfo.username,
+        handCount: 0,
+        status: 'waiting' as const,
+        ready: false
+      };
+      
+      // Import room manager
+      const { default: roomManager } = await import('@/lib/roomManager');
       const room = roomManager.createRoom(newPlayer, gameSettings, type);
       
-      // Store room-specific player info
-      localStorage.setItem(`player_${room.id}`, playerId);
+      // Update session with room info
+      await sessionManager.updateCurrentRoom(room.id);
       
       toast({
         title: "Room created!",
@@ -147,11 +157,20 @@ const UnoLike: React.FC = () => {
       
       // Navigate to the room URL
       window.location.href = `/games/04/room/${room.id}`;
-    });
+    } catch (error) {
+      console.error('Failed to create room:', error);
+      toast({
+        title: "Failed to create room",
+        description: "Please try again",
+        status: "error",
+        duration: 3000,
+        isClosable: true
+      });
+    }
   };
   
   // Join an existing room
-  const joinRoom = (code: string = joinCode) => {
+  const joinRoom = async (code: string = joinCode) => {
     if (!playerName.trim()) {
       toast({
         title: "Enter your name",
@@ -174,19 +193,34 @@ const UnoLike: React.FC = () => {
       return;
     }
     
-    const roomCode = code.toUpperCase();
-    const trimmedName = playerName.trim();
-    const playerId = generatePlayerID(trimmedName);
+    if (!isInitialized) {
+      toast({
+        title: "Please wait",
+        description: "Initializing session...",
+        status: "info",
+        duration: 2000,
+        isClosable: true
+      });
+      return;
+    }
     
-    // Store player info for the room
-    localStorage.setItem('player_name', trimmedName);
-    localStorage.setItem('persistent_player_id', playerId);
-    
-    // Check if room exists and navigate to it
-    import('@/lib/roomManager').then(({ default: roomManager }) => {
+    try {
+      const roomCode = code.toUpperCase();
+      const trimmedName = playerName.trim();
+      
+      // Get player info from session manager
+      const { default: sessionManager } = await import('@/lib/sessionManager');
+      const playerInfo = await sessionManager.getPlayerInfo(trimmedName);
+      
+      if (!playerInfo) {
+        throw new Error('Failed to create player session');
+      }
+      
+      // Check if room exists and navigate to it
+      const { default: roomManager } = await import('@/lib/roomManager');
       if (roomManager.isRoomAccessible(roomCode)) {
-        // Store room-specific player info
-        localStorage.setItem(`player_${roomCode}`, playerId);
+        // Update session with room info
+        await sessionManager.updateCurrentRoom(roomCode);
         
         // Navigate to the room URL - the room page will handle the actual joining
         window.location.href = `/games/04/room/${roomCode}`;
@@ -199,11 +233,20 @@ const UnoLike: React.FC = () => {
           isClosable: true
         });
       }
-    });
+    } catch (error) {
+      console.error('Failed to join room:', error);
+      toast({
+        title: "Failed to join room",
+        description: "Please try again",
+        status: "error",
+        duration: 3000,
+        isClosable: true
+      });
+    }
   };
   
   // Quick play - join any available public room
-  const quickPlay = () => {
+  const quickPlay = async () => {
     if (!playerName.trim()) {
       toast({
         title: "Enter your name",
@@ -215,38 +258,49 @@ const UnoLike: React.FC = () => {
       return;
     }
     
-    const trimmedName = playerName.trim();
-    const playerId = generatePlayerID(trimmedName);
+    if (!isInitialized) {
+      toast({
+        title: "Please wait",
+        description: "Initializing session...",
+        status: "info",
+        duration: 2000,
+        isClosable: true
+      });
+      return;
+    }
     
-    // Store player info for the room
-    localStorage.setItem('player_name', trimmedName);
-    localStorage.setItem('persistent_player_id', playerId);
-    localStorage.setItem('player_name', trimmedName);
-    localStorage.setItem('temp_player_id', playerId);
-    
-    // Get available public rooms
-    import('@/lib/roomManager').then(({ default: roomManager }) => {
+    try {
+      const trimmedName = playerName.trim();
+      
+      // Get player info from session manager
+      const { default: sessionManager } = await import('@/lib/sessionManager');
+      const playerInfo = await sessionManager.getPlayerInfo(trimmedName);
+      
+      if (!playerInfo) {
+        throw new Error('Failed to create player session');
+      }
+      
+      // Get available public rooms
+      const { default: roomManager } = await import('@/lib/roomManager');
       const publicRooms = roomManager.getPublicRooms();
       
       if (publicRooms.length > 0) {
         // Join the first available public room
         const targetRoom = publicRooms[0];
-        localStorage.setItem(`player_${targetRoom.id}`, playerId);
+        await sessionManager.updateCurrentRoom(targetRoom.id);
         window.location.href = `/games/04/room/${targetRoom.id}`;
       } else {
         // No public rooms available, create one
         const newPlayer = {
-          id: playerId,
-          username: trimmedName,
+          id: playerInfo.id,
+          username: playerInfo.username,
           handCount: 0,
           status: 'waiting' as const,
           ready: false
         };
         
         const room = roomManager.createRoom(newPlayer, gameSettings, 'public');
-        
-        // Store room-specific player info
-        localStorage.setItem(`player_${room.id}`, playerId);
+        await sessionManager.updateCurrentRoom(room.id);
         
         toast({
           title: "Created new public room",
@@ -258,7 +312,16 @@ const UnoLike: React.FC = () => {
         
         window.location.href = `/games/04/room/${room.id}`;
       }
-    });
+    } catch (error) {
+      console.error('Failed to quick play:', error);
+      toast({
+        title: "Failed to quick play",
+        description: "Please try again",
+        status: "error",
+        duration: 3000,
+        isClosable: true
+      });
+    }
   };
   
   // Load global games played from localStorage
@@ -275,6 +338,36 @@ const UnoLike: React.FC = () => {
   }, [globalGamesPlayed]);
 
   // Render setup screen
+  if (!isInitialized) {
+    return (
+      <VStack spacing={8} maxW="800px" mx="auto">
+        <VStack spacing={4} textAlign="center">
+          <Heading size="xl" color={accentColor}>
+            UNO-Like Card Game
+          </Heading>
+          <Text color="gray.500" fontSize="lg">
+            The classic UNO experience, but with more exciting features!
+          </Text>
+          <Badge colorScheme="purple" fontSize="sm" px={3} py={1}>
+            Multiplayer Strategy Game
+          </Badge>
+        </VStack>
+
+        <Card bg={cardBg} w="full" maxW="500px">
+          <CardBody>
+            <VStack spacing={4} py={8}>
+              <Spinner size="xl" color={accentColor} />
+              <Text>Initializing session...</Text>
+              <Text fontSize="sm" color="gray.500" textAlign="center">
+                Setting up your secure player session for cross-device compatibility
+              </Text>
+            </VStack>
+          </CardBody>
+        </Card>
+      </VStack>
+    );
+  }
+  
   return (
     <VStack spacing={8} maxW="800px" mx="auto">
       <VStack spacing={4} textAlign="center">
@@ -317,7 +410,9 @@ const UnoLike: React.FC = () => {
                 leftIcon={<FaRandom />}
                 onClick={quickPlay}
                 w="full"
-                isDisabled={!playerName.trim()}
+                isDisabled={!playerName.trim() || !isInitialized}
+                isLoading={!isInitialized}
+                loadingText="Initializing"
               >
                 Quick Play
               </Button>
@@ -335,7 +430,9 @@ const UnoLike: React.FC = () => {
                 leftIcon={<FaPlus />}
                 onClick={() => createRoom('public')}
                 w="full"
-                isDisabled={!playerName.trim()}
+                isDisabled={!playerName.trim() || !isInitialized}
+                isLoading={!isInitialized}
+                loadingText="Initializing"
               >
                 Create Public Room
               </Button>
@@ -346,7 +443,9 @@ const UnoLike: React.FC = () => {
                 leftIcon={<FaKey />}
                 onClick={() => createRoom('private')}
                 w="full"
-                isDisabled={!playerName.trim()}
+                isDisabled={!playerName.trim() || !isInitialized}
+                isLoading={!isInitialized}
+                loadingText="Initializing"
               >
                 Create Private Room
               </Button>
@@ -371,7 +470,9 @@ const UnoLike: React.FC = () => {
                 size="lg"
                 w="full"
                 onClick={() => joinRoom()}
-                isDisabled={!playerName.trim() || !joinCode.trim()}
+                isDisabled={!playerName.trim() || !joinCode.trim() || !isInitialized}
+                isLoading={!isInitialized}
+                loadingText="Initializing"
               >
                 Join Room
               </Button>

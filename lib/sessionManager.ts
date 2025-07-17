@@ -1,0 +1,188 @@
+// Session Management Service for Cookie-Based Player Persistence
+// Handles player sessions across tabs and page refreshes
+
+export interface PlayerSession {
+  sessionId: string;
+  playerId: string;
+  username: string;
+  currentRoomId?: string;
+  createdAt: Date;
+  lastActivity: Date;
+}
+
+class SessionManager {
+  private currentSession: PlayerSession | null = null;
+  private sessionCheckPromise: Promise<PlayerSession | null> | null = null;
+
+  // Get current session from server
+  async getCurrentSession(): Promise<PlayerSession | null> {
+    // Prevent multiple concurrent session checks
+    if (this.sessionCheckPromise) {
+      return this.sessionCheckPromise;
+    }
+
+    this.sessionCheckPromise = this.fetchCurrentSession();
+    const result = await this.sessionCheckPromise;
+    this.sessionCheckPromise = null;
+    return result;
+  }
+
+  private async fetchCurrentSession(): Promise<PlayerSession | null> {
+    try {
+      const response = await fetch('/api/sessions', {
+        method: 'GET',
+        credentials: 'include', // Include cookies
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.session) {
+          this.currentSession = {
+            ...data.session,
+            createdAt: new Date(data.session.createdAt),
+            lastActivity: new Date(data.session.lastActivity)
+          };
+          return this.currentSession;
+        }
+      }
+    } catch (error) {
+      console.error('Failed to get current session:', error);
+    }
+
+    this.currentSession = null;
+    return null;
+  }
+
+  // Create or update session with username
+  async createOrUpdateSession(username: string, roomId?: string): Promise<PlayerSession | null> {
+    try {
+      const response = await fetch('/api/sessions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include', // Include cookies
+        body: JSON.stringify({ username: username.trim(), roomId }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.session) {
+          this.currentSession = {
+            ...data.session,
+            createdAt: new Date(data.session.createdAt),
+            lastActivity: new Date(data.session.lastActivity)
+          };
+          return this.currentSession;
+        }
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create session');
+      }
+    } catch (error) {
+      console.error('Failed to create/update session:', error);
+      throw error;
+    }
+
+    return null;
+  }
+
+  // Update current room in session
+  async updateCurrentRoom(roomId: string): Promise<boolean> {
+    try {
+      const response = await fetch('/api/sessions', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include', // Include cookies
+        body: JSON.stringify({ roomId }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.session && this.currentSession) {
+          this.currentSession.currentRoomId = data.session.currentRoomId;
+          this.currentSession.lastActivity = new Date(data.session.lastActivity);
+          return true;
+        }
+      }
+    } catch (error) {
+      console.error('Failed to update session room:', error);
+    }
+
+    return false;
+  }
+
+  // Clear session (logout)
+  async clearSession(): Promise<boolean> {
+    try {
+      const response = await fetch('/api/sessions', {
+        method: 'DELETE',
+        credentials: 'include', // Include cookies
+      });
+
+      if (response.ok) {
+        this.currentSession = null;
+        return true;
+      }
+    } catch (error) {
+      console.error('Failed to clear session:', error);
+    }
+
+    return false;
+  }
+
+  // Get player information for room operations
+  async getPlayerInfo(username?: string): Promise<{ id: string; username: string } | null> {
+    // If we have a current session and no username provided, use session data
+    if (this.currentSession && !username) {
+      return {
+        id: this.currentSession.playerId,
+        username: this.currentSession.username
+      };
+    }
+
+    // If username is provided, create or update session
+    if (username) {
+      const session = await this.createOrUpdateSession(username);
+      if (session) {
+        return {
+          id: session.playerId,
+          username: session.username
+        };
+      }
+    }
+
+    // Try to get existing session
+    const session = await this.getCurrentSession();
+    if (session) {
+      return {
+        id: session.playerId,
+        username: session.username
+      };
+    }
+
+    return null;
+  }
+
+  // Check if user has an active session
+  async hasActiveSession(): Promise<boolean> {
+    const session = await this.getCurrentSession();
+    return session !== null;
+  }
+
+  // Get cached session (doesn't make API call)
+  getCachedSession(): PlayerSession | null {
+    return this.currentSession;
+  }
+
+  // Initialize session on app start
+  async initializeSession(): Promise<PlayerSession | null> {
+    return this.getCurrentSession();
+  }
+}
+
+// Export singleton instance
+const sessionManager = new SessionManager();
+export default sessionManager;
