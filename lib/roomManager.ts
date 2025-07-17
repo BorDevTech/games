@@ -71,8 +71,8 @@ class RoomManager {
   private readonly CLEANUP_INTERVAL = 5 * 60 * 1000; // 5 minutes
   private readonly STORAGE_KEY = 'unolike_rooms';
   private readonly AI_DEALER_ID = 'ai-dealer-bot';
-  private readonly AUTO_START_CHECK_INTERVAL = 2000; // Check every 2 seconds for auto-start
-  private readonly API_SYNC_INTERVAL = 3000; // Sync with API every 3 seconds
+  private readonly AUTO_START_CHECK_INTERVAL = 3000; // Check every 3 seconds for auto-start (reduced frequency)
+  private readonly API_SYNC_INTERVAL = 5000; // Sync with API every 5 seconds (reduced frequency)
   private apiSyncEnabled = false;
   
   constructor() {

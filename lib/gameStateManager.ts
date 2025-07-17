@@ -33,7 +33,7 @@ export interface GameState {
 
 class GameStateManager {
   private gameStates: Map<string, GameState> = new Map();
-  private readonly API_SYNC_INTERVAL = 2000; // Sync every 2 seconds
+  private readonly API_SYNC_INTERVAL = 3000; // Sync every 3 seconds (increased from 2s)
   private readonly STORAGE_KEY_PREFIX = 'unolike_game_';
   private syncEnabled = false;
 
@@ -227,15 +227,41 @@ class GameStateManager {
             }
             apiGameState.syncedAt = new Date(apiGameState.syncedAt || apiGameState.lastUpdated);
             
-            this.gameStates.set(roomId, apiGameState);
-            // Save to localStorage without triggering another API sync
-            localStorage.setItem(this.STORAGE_KEY_PREFIX + roomId, JSON.stringify(apiGameState));
+            // Validate the game state before applying it
+            if (this.validateGameState(apiGameState)) {
+              this.gameStates.set(roomId, apiGameState);
+              // Save to localStorage without triggering another API sync
+              localStorage.setItem(this.STORAGE_KEY_PREFIX + roomId, JSON.stringify(apiGameState));
+            } else {
+              console.warn('Received invalid game state from API, ignoring');
+            }
           }
         }
       }
     } catch (error) {
       console.warn('Failed to sync game state from API:', error);
     }
+  }
+  
+  // Validate game state for consistency
+  private validateGameState(gameState: GameState): boolean {
+    if (!gameState) return false;
+    
+    // Check basic structure
+    if (!gameState.playerOrder || !Array.isArray(gameState.playerOrder)) return false;
+    if (typeof gameState.currentPlayerIndex !== 'number') return false;
+    if (!gameState.topCard || !gameState.topCard.id) return false;
+    if (!gameState.playerHands || typeof gameState.playerHands !== 'object') return false;
+    
+    // Check player index bounds
+    if (gameState.currentPlayerIndex < 0 || gameState.currentPlayerIndex >= gameState.playerOrder.length) return false;
+    
+    // Check that all players in order have hands
+    for (const playerId of gameState.playerOrder) {
+      if (!Array.isArray(gameState.playerHands[playerId])) return false;
+    }
+    
+    return true;
   }
 
   // Sync all game states with API

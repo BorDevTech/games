@@ -52,8 +52,10 @@ const UnoLikeRoom: React.FC<UnoLikeRoomProps> = ({ roomId, initialRoom, onRoomDe
   // Initialize current player from URL or local storage
   useEffect(() => {
     if (!currentPlayer) {
-      // Get player info from localStorage
-      const storedPlayerId = localStorage.getItem(`player_${roomId}`) || localStorage.getItem('temp_player_id');
+      // Get player info from localStorage - try persistent ID first, fallback to temp
+      const storedPlayerId = localStorage.getItem(`player_${roomId}`) || 
+                             localStorage.getItem('persistent_player_id') || 
+                             localStorage.getItem('temp_player_id');
       const storedPlayerName = localStorage.getItem('player_name');
       
       if (!storedPlayerId || !storedPlayerName) {
@@ -74,10 +76,14 @@ const UnoLikeRoom: React.FC<UnoLikeRoomProps> = ({ roomId, initialRoom, onRoomDe
       if (playerCheck.inRoom && playerCheck.player) {
         setCurrentPlayer(playerCheck.player);
         setIsInQueue(false);
+        // Store room-specific player ID for consistency
+        localStorage.setItem(`player_${roomId}`, storedPlayerId);
         return;
       } else if (playerCheck.inQueue && playerCheck.player) {
         setCurrentPlayer(playerCheck.player);
         setIsInQueue(true);
+        // Store room-specific player ID for consistency
+        localStorage.setItem(`player_${roomId}`, storedPlayerId);
         return;
       }
       

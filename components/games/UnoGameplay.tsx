@@ -32,19 +32,29 @@ interface UnoGameplayProps {
 const UnoGameplay: React.FC<UnoGameplayProps> = ({ roomId, players, currentPlayer, onEndGame }) => {
   const toast = useToast();
   
-  // Filter out AI dealer for game players
+  // Filter out AI dealer for game players - this should be consistent everywhere
   const gamePlayers = players.filter(p => p.id !== 'ai-dealer-bot' && p.status === 'playing');
   
   // Initialize or load game state
   const [gameState, setGameState] = useState<GameState | null>(() => {
     const existingState = gameStateManager.getGameState(roomId);
     if (existingState) {
+      // Ensure the game state player order matches our current game players
+      const currentPlayerIds = gamePlayers.map(p => p.id);
+      if (existingState.playerOrder.length !== currentPlayerIds.length || 
+          !existingState.playerOrder.every(id => currentPlayerIds.includes(id))) {
+        console.log('Player order mismatch detected, recreating game state');
+        return gameStateManager.createGameState(roomId, currentPlayerIds);
+      }
       return existingState;
     }
     
     // Create new game state if none exists
     const playerIds = gamePlayers.map(p => p.id);
-    return gameStateManager.createGameState(roomId, playerIds);
+    if (playerIds.length >= 2) {
+      return gameStateManager.createGameState(roomId, playerIds);
+    }
+    return null; // Not enough players to start
   });
 
   // Periodic sync with other devices
@@ -52,16 +62,26 @@ const UnoGameplay: React.FC<UnoGameplayProps> = ({ roomId, players, currentPlaye
     const syncInterval = setInterval(() => {
       const syncedState = gameStateManager.getGameState(roomId, true); // Force sync
       if (syncedState && gameState) {
-        // Check if the state has changed
+        // Check if the state has changed significantly
         if (syncedState.syncedAt && gameState.syncedAt && syncedState.syncedAt > gameState.syncedAt) {
-          setGameState(syncedState);
+          // Additional validation to prevent invalid states
+          const currentPlayerIds = gamePlayers.map(p => p.id);
+          if (syncedState.playerOrder.length === currentPlayerIds.length && 
+              syncedState.playerOrder.every(id => currentPlayerIds.includes(id)) &&
+              syncedState.currentPlayerIndex >= 0 && 
+              syncedState.currentPlayerIndex < syncedState.playerOrder.length) {
+            console.log('Syncing updated game state from API');
+            setGameState(syncedState);
+          } else {
+            console.warn('Received invalid game state from sync, ignoring');
+          }
         }
       }
-    }, 2000); // Sync every 2 seconds
+    }, 3000); // Reduce sync frequency to 3 seconds to avoid conflicts
 
     return () => clearInterval(syncInterval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId, gameState?.syncedAt]);
+  }, [roomId, gameState?.syncedAt, gamePlayers.length]);
 
   if (!gameState) {
     return (
@@ -107,8 +127,22 @@ const UnoGameplay: React.FC<UnoGameplayProps> = ({ roomId, players, currentPlaye
   function playCard(card: UnoCard) {
     if (!gameState || gameState.gameEnded) return;
     
-    const currentGamePlayer = gamePlayers[gameState.currentPlayerIndex];
-    if (currentGamePlayer.id !== currentPlayer.id) {
+    // Force fresh state check before making any moves
+    const freshState = gameStateManager.getGameState(roomId, true);
+    if (!freshState || freshState.gameEnded) {
+      toast({
+        title: "Game state error",
+        description: "Unable to get current game state",
+        status: "error",
+        duration: 2000,
+        isClosable: true
+      });
+      return;
+    }
+    
+    // Use fresh state for validation
+    const currentGamePlayer = gamePlayers[freshState.currentPlayerIndex];
+    if (!currentGamePlayer || currentGamePlayer.id !== currentPlayer.id) {
       toast({
         title: "Not your turn",
         description: "Wait for your turn to play",
@@ -119,7 +153,7 @@ const UnoGameplay: React.FC<UnoGameplayProps> = ({ roomId, players, currentPlaye
       return;
     }
 
-    if (!canPlayCard(card, gameState.topCard)) {
+    if (!canPlayCard(card, freshState.topCard)) {
       toast({
         title: "Invalid move",
         description: "That card cannot be played",
@@ -129,9 +163,22 @@ const UnoGameplay: React.FC<UnoGameplayProps> = ({ roomId, players, currentPlaye
       });
       return;
     }
+    
+    // Verify player has this card in their hand
+    const playerHand = freshState.playerHands[currentPlayer.id] || [];
+    if (!playerHand.find(c => c.id === card.id)) {
+      toast({
+        title: "Invalid card",
+        description: "You don't have this card in your hand",
+        status: "error",
+        duration: 2000,
+        isClosable: true
+      });
+      return;
+    }
 
     // Remove card from player's hand
-    const newPlayerHands = { ...gameState.playerHands };
+    const newPlayerHands = { ...freshState.playerHands };
     newPlayerHands[currentPlayer.id] = newPlayerHands[currentPlayer.id].filter(c => c.id !== card.id);
     
     // Check if player won
@@ -161,19 +208,19 @@ const UnoGameplay: React.FC<UnoGameplayProps> = ({ roomId, players, currentPlaye
       return;
     }
 
-    let newDirection = gameState.direction;
-    let nextPlayerIndex = gameState.currentPlayerIndex;
+    let newDirection = freshState.direction;
+    let nextPlayerIndex = freshState.currentPlayerIndex;
 
     // Handle action cards
     if (card.type === 'reverse') {
-      newDirection = gameState.direction * -1 as 1 | -1;
+      newDirection = freshState.direction * -1 as 1 | -1;
     } else if (card.type === 'skip') {
       // Skip next player
       nextPlayerIndex = (nextPlayerIndex + newDirection + gamePlayers.length) % gamePlayers.length;
     } else if (card.type === 'draw2') {
       // Next player draws 2 and is skipped
       const nextPlayerId = gamePlayers[(nextPlayerIndex + newDirection + gamePlayers.length) % gamePlayers.length].id;
-      const drawnCards = gameState.deck.slice(0, 2);
+      const drawnCards = freshState.deck.slice(0, 2);
       newPlayerHands[nextPlayerId] = [...newPlayerHands[nextPlayerId], ...drawnCards];
       nextPlayerIndex = (nextPlayerIndex + newDirection + gamePlayers.length) % gamePlayers.length;
     }
@@ -202,8 +249,21 @@ const UnoGameplay: React.FC<UnoGameplayProps> = ({ roomId, players, currentPlaye
   function drawCard() {
     if (!gameState || gameState.gameEnded) return;
     
-    const currentGamePlayer = gamePlayers[gameState.currentPlayerIndex];
-    if (currentGamePlayer.id !== currentPlayer.id) {
+    // Force fresh state check before making any moves
+    const freshState = gameStateManager.getGameState(roomId, true);
+    if (!freshState || freshState.gameEnded) {
+      toast({
+        title: "Game state error",
+        description: "Unable to get current game state",
+        status: "error",
+        duration: 2000,
+        isClosable: true
+      });
+      return;
+    }
+    
+    const currentGamePlayer = gamePlayers[freshState.currentPlayerIndex];
+    if (!currentGamePlayer || currentGamePlayer.id !== currentPlayer.id) {
       toast({
         title: "Not your turn",
         description: "Wait for your turn to draw",
@@ -214,7 +274,7 @@ const UnoGameplay: React.FC<UnoGameplayProps> = ({ roomId, players, currentPlaye
       return;
     }
 
-    if (gameState.hasDrawn) {
+    if (freshState.hasDrawn) {
       toast({
         title: "Already drawn",
         description: "You can only draw one card per turn",
@@ -225,7 +285,7 @@ const UnoGameplay: React.FC<UnoGameplayProps> = ({ roomId, players, currentPlaye
       return;
     }
 
-    if (gameState.deck.length === 0) {
+    if (freshState.deck.length === 0) {
       toast({
         title: "Deck empty",
         description: "No more cards to draw",
@@ -236,12 +296,12 @@ const UnoGameplay: React.FC<UnoGameplayProps> = ({ roomId, players, currentPlaye
       return;
     }
 
-    const drawnCard = gameState.deck[0];
-    const newPlayerHands = { ...gameState.playerHands };
+    const drawnCard = freshState.deck[0];
+    const newPlayerHands = { ...freshState.playerHands };
     newPlayerHands[currentPlayer.id] = [...newPlayerHands[currentPlayer.id], drawnCard];
 
     const updatedState = gameStateManager.updateGameState(roomId, {
-      deck: gameState.deck.slice(1),
+      deck: freshState.deck.slice(1),
       playerHands: newPlayerHands,
       hasDrawn: true
     }, {
@@ -259,10 +319,32 @@ const UnoGameplay: React.FC<UnoGameplayProps> = ({ roomId, players, currentPlaye
   function passTurn() {
     if (!gameState || gameState.gameEnded) return;
     
-    const currentGamePlayer = gamePlayers[gameState.currentPlayerIndex];
-    if (currentGamePlayer.id !== currentPlayer.id) return;
+    // Force fresh state check before making any moves
+    const freshState = gameStateManager.getGameState(roomId, true);
+    if (!freshState || freshState.gameEnded) {
+      toast({
+        title: "Game state error",
+        description: "Unable to get current game state",
+        status: "error",
+        duration: 2000,
+        isClosable: true
+      });
+      return;
+    }
     
-    if (!gameState.hasDrawn) {
+    const currentGamePlayer = gamePlayers[freshState.currentPlayerIndex];
+    if (!currentGamePlayer || currentGamePlayer.id !== currentPlayer.id) {
+      toast({
+        title: "Not your turn",
+        description: "It's not your turn to pass",
+        status: "warning",
+        duration: 2000,
+        isClosable: true
+      });
+      return;
+    }
+    
+    if (!freshState.hasDrawn) {
       toast({
         title: "Must draw first",
         description: "You must draw a card before passing",
@@ -273,7 +355,7 @@ const UnoGameplay: React.FC<UnoGameplayProps> = ({ roomId, players, currentPlaye
       return;
     }
 
-    const nextPlayerIndex = (gameState.currentPlayerIndex + gameState.direction + gamePlayers.length) % gamePlayers.length;
+    const nextPlayerIndex = (freshState.currentPlayerIndex + freshState.direction + gamePlayers.length) % gamePlayers.length;
     
     const updatedState = gameStateManager.updateGameState(roomId, {
       currentPlayerIndex: nextPlayerIndex,

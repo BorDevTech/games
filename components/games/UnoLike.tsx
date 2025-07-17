@@ -76,9 +76,30 @@ const UnoLike: React.FC = () => {
   // Statistics
   const [globalGamesPlayed, setGlobalGamesPlayed] = useState<number>(0);
   
-  // Generate a unique card ID for internal use
-  const generateCardId = (): string => {
-    return Math.random().toString(36).substring(2, 15);
+  // Generate a persistent player ID based on username and browser fingerprint
+  const generatePlayerID = (username: string): string => {
+    // Create a browser fingerprint for consistency across sessions
+    const browserFingerprint = [
+      navigator.userAgent,
+      navigator.language,
+      screen.width + 'x' + screen.height,
+      new Date().getTimezoneOffset(),
+      // Use a timestamp that changes daily to allow for some variation
+      Math.floor(Date.now() / (1000 * 60 * 60 * 24))
+    ].join('|');
+    
+    // Create a hash of username + fingerprint for consistency
+    let hash = 0;
+    const str = username.toLowerCase() + '|' + browserFingerprint;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+    
+    // Convert to base36 and ensure it's positive
+    const id = Math.abs(hash).toString(36).toUpperCase();
+    return `player_${id}`;
   };
   
   // Create a new room
@@ -94,12 +115,12 @@ const UnoLike: React.FC = () => {
       return;
     }
     
-    const playerId = generateCardId();
     const trimmedName = playerName.trim();
+    const playerId = generatePlayerID(trimmedName);
     
     // Store player info for the room
     localStorage.setItem('player_name', trimmedName);
-    localStorage.setItem('temp_player_id', playerId);
+    localStorage.setItem('persistent_player_id', playerId);
     
     const newPlayer = {
       id: playerId,
@@ -155,11 +176,11 @@ const UnoLike: React.FC = () => {
     
     const roomCode = code.toUpperCase();
     const trimmedName = playerName.trim();
-    const playerId = generateCardId();
+    const playerId = generatePlayerID(trimmedName);
     
     // Store player info for the room
     localStorage.setItem('player_name', trimmedName);
-    localStorage.setItem('temp_player_id', playerId);
+    localStorage.setItem('persistent_player_id', playerId);
     
     // Check if room exists and navigate to it
     import('@/lib/roomManager').then(({ default: roomManager }) => {
@@ -195,9 +216,11 @@ const UnoLike: React.FC = () => {
     }
     
     const trimmedName = playerName.trim();
-    const playerId = generateCardId();
+    const playerId = generatePlayerID(trimmedName);
     
     // Store player info for the room
+    localStorage.setItem('player_name', trimmedName);
+    localStorage.setItem('persistent_player_id', playerId);
     localStorage.setItem('player_name', trimmedName);
     localStorage.setItem('temp_player_id', playerId);
     
