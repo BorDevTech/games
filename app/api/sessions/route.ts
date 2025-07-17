@@ -1,22 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
+import persistentStorage from '@/lib/persistentStorage';
 
 // Force dynamic rendering for this API route
 export const dynamic = 'force-dynamic';
 
-// Session data structure
-interface PlayerSession {
-  sessionId: string;
-  playerId: string;
-  username: string;
-  createdAt: Date;
-  lastActivity: Date;
-  currentRoomId?: string;
-}
-
 // Simple in-memory storage for sessions
 // In production, this would be replaced with a database like Redis
-const sessions = new Map<string, PlayerSession>();
+// Note: Using persistent storage for sessions now
 
 // Generate a cryptographically secure session ID
 function generateSessionId(): string {
@@ -40,14 +31,8 @@ function generatePlayerId(sessionId: string, username: string): string {
 
 // Clean up expired sessions (older than 24 hours)
 function cleanupExpiredSessions(): void {
-  const now = new Date();
-  const expirationTime = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
-  
-  for (const [sessionId, session] of sessions.entries()) {
-    if (now.getTime() - session.lastActivity.getTime() > expirationTime) {
-      sessions.delete(sessionId);
-    }
-  }
+  // This is now handled by persistentStorage
+  persistentStorage.cleanupExpiredSessions();
 }
 
 export async function GET() {
@@ -62,7 +47,7 @@ export async function GET() {
       }, { status: 404 });
     }
     
-    const session = sessions.get(sessionId);
+    const session = persistentStorage.getPlayerSession(sessionId);
     if (!session) {
       return NextResponse.json({
         success: false,
@@ -72,6 +57,7 @@ export async function GET() {
     
     // Update last activity
     session.lastActivity = new Date();
+    persistentStorage.setPlayerSession(sessionId, session);
     
     return NextResponse.json({
       success: true,
@@ -107,7 +93,7 @@ export async function POST(request: NextRequest) {
     
     const cookieStore = await cookies();
     let sessionId = cookieStore.get('game_session')?.value;
-    let session = sessionId ? sessions.get(sessionId) : null;
+    let session = sessionId ? persistentStorage.getPlayerSession(sessionId) : null;
     
     // Clean up expired sessions periodically
     cleanupExpiredSessions();
@@ -126,13 +112,14 @@ export async function POST(request: NextRequest) {
         currentRoomId: roomId
       };
       
-      sessions.set(sessionId, session);
+      persistentStorage.setPlayerSession(sessionId, session);
     } else {
       // Update existing session only if username matches
       session.lastActivity = new Date();
       if (roomId) {
         session.currentRoomId = roomId;
       }
+      persistentStorage.setPlayerSession(sessionId!, session);
     }
     
     // Create response with session cookie
@@ -149,7 +136,7 @@ export async function POST(request: NextRequest) {
     });
     
     // Set HTTP-only cookie that expires in 7 days
-    response.cookies.set('game_session', session.sessionId, {
+    response.cookies.set('game_session', session.sessionId as string, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
@@ -182,7 +169,7 @@ export async function PUT(request: NextRequest) {
       }, { status: 404 });
     }
     
-    const session = sessions.get(sessionId);
+    const session = persistentStorage.getPlayerSession(sessionId);
     if (!session) {
       return NextResponse.json({
         success: false,
@@ -193,6 +180,7 @@ export async function PUT(request: NextRequest) {
     // Update session
     session.currentRoomId = roomId;
     session.lastActivity = new Date();
+    persistentStorage.setPlayerSession(sessionId, session);
     
     return NextResponse.json({
       success: true,
@@ -220,7 +208,7 @@ export async function DELETE() {
     const sessionId = cookieStore.get('game_session')?.value;
     
     if (sessionId) {
-      sessions.delete(sessionId);
+      persistentStorage.deletePlayerSession(sessionId);
     }
     
     const response = NextResponse.json({

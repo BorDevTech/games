@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import persistentStorage from '@/lib/persistentStorage';
 
 // Force dynamic rendering for this API route
 export const dynamic = 'force-dynamic';
-
-// Simple in-memory storage for game states
-// In production, this would be replaced with a database
-const gameStates = new Map<string, Record<string, unknown>>();
 
 export async function GET(request: NextRequest) {
   try {
@@ -19,7 +16,7 @@ export async function GET(request: NextRequest) {
       }, { status: 400 });
     }
     
-    const gameState = gameStates.get(roomId.toUpperCase());
+    const gameState = persistentStorage.getGameSession(roomId);
     if (gameState) {
       return NextResponse.json({
         success: true,
@@ -61,7 +58,7 @@ export async function POST(request: NextRequest) {
       syncedAt: new Date().toISOString()
     };
     
-    gameStates.set(roomId.toUpperCase(), stateWithMetadata);
+    persistentStorage.setGameSession(roomId, stateWithMetadata);
     
     return NextResponse.json({
       success: true,
@@ -91,7 +88,7 @@ export async function DELETE(request: NextRequest) {
       }, { status: 400 });
     }
     
-    const deleted = gameStates.delete(roomId.toUpperCase());
+    const deleted = persistentStorage.deleteGameSession(roomId);
     
     return NextResponse.json({
       success: true,
