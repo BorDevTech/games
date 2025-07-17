@@ -227,6 +227,12 @@ class RoomManager {
     return room !== null;
   }
 
+  // Check if a room exists and is accessible with API fallback
+  async isRoomAccessibleWithAPIFallback(roomId: string): Promise<boolean> {
+    const room = await this.getRoomWithAPIFallback(roomId);
+    return room !== null;
+  }
+
   // Join a room with API fallback for cross-device access
   async joinRoomWithAPIFallback(roomId: string, player: Omit<Player, 'isHost' | 'joinedAt' | 'lastActivity'>): Promise<{ success: boolean; room?: Room; error?: string; inQueue?: boolean }> {
     // First try to get room with API fallback
