@@ -112,8 +112,8 @@ export async function POST(request: NextRequest) {
     // Clean up expired sessions periodically
     cleanupExpiredSessions();
     
-    if (!session) {
-      // Create new session
+    if (!session || session.username !== username.trim()) {
+      // Create new session if no session exists OR username is different
       sessionId = generateSessionId();
       const playerId = generatePlayerId(sessionId, username.trim());
       
@@ -128,10 +128,7 @@ export async function POST(request: NextRequest) {
       
       sessions.set(sessionId, session);
     } else {
-      // Update existing session
-      const newPlayerId = generatePlayerId(session.sessionId, username.trim());
-      session.playerId = newPlayerId;
-      session.username = username.trim();
+      // Update existing session only if username matches
       session.lastActivity = new Date();
       if (roomId) {
         session.currentRoomId = roomId;
