@@ -44,3 +44,6 @@ test-*.json
 *-test-results.json
 local-test-submission.json
 comprehensive-test-results.json
+
+# temporary test files
+test-websocket.js

@@ -1,5 +1,6 @@
 // Real-time Client Manager for WebSocket Communication
-// Handles WebSocket connections, message handling, and real-time updates on the client side
+// Implements MDN WebSocket API standards with proper backpressure handling
+// Provides cross-browser compatibility and robust error handling
 
 export interface GameMessage {
   type: 'join_room' | 'leave_room' | 'game_action' | 'room_update' | 'player_update' | 'error' | 'heartbeat' | 'connection_established';
@@ -14,28 +15,77 @@ export interface RealTimeEventListener {
   (message: GameMessage): void;
 }
 
+// Message queue with backpressure handling
+class ClientMessageQueue {
+  private queue: GameMessage[] = [];
+  private readonly maxSize: number = 100;
+  private processing: boolean = false;
+
+  enqueue(message: GameMessage): boolean {
+    if (this.queue.length >= this.maxSize) {
+      console.warn('Client message queue full, dropping oldest message');
+      this.queue.shift();
+    }
+    
+    this.queue.push(message);
+    return true;
+  }
+
+  dequeue(): GameMessage | undefined {
+    return this.queue.shift();
+  }
+
+  size(): number {
+    return this.queue.length;
+  }
+
+  clear(): void {
+    this.queue = [];
+  }
+
+  setProcessing(processing: boolean): void {
+    this.processing = processing;
+  }
+
+  isProcessing(): boolean {
+    return this.processing;
+  }
+}
+
 class RealTimeClient {
   private ws: WebSocket | null = null;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectDelay = 1000; // Start with 1 second
   private heartbeatInterval: NodeJS.Timeout | null = null;
+  private connectionTimeout: NodeJS.Timeout | null = null;
   private isConnecting = false;
   private isConnected = false;
   private eventListeners: Map<string, Set<RealTimeEventListener>> = new Map();
-  private messageQueue: GameMessage[] = [];
+  private messageQueue: ClientMessageQueue = new ClientMessageQueue();
 
   private playerId: string | null = null;
   private username: string | null = null;
   private sessionId: string | null = null;
+  
+  // Performance monitoring
+  private lastPingTime: number = 0;
+  private latency: number = 0;
 
   constructor() {
-    // Auto-reconnect on page visibility change
+    // Auto-reconnect on page visibility change (MDN recommended practice)
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', () => {
         if (!document.hidden && !this.isConnected && !this.isConnecting) {
           this.reconnect();
         }
+      });
+    }
+
+    // Handle beforeunload to gracefully close connections
+    if (typeof window !== 'undefined') {
+      window.addEventListener('beforeunload', () => {
+        this.disconnect();
       });
     }
   }
@@ -64,26 +114,42 @@ class RealTimeClient {
 
     try {
       const wsUrl = this.getWebSocketUrl();
-      console.log('Attempting WebSocket connection:', wsUrl);
+      console.log('Attempting WebSocket connection following MDN standards:', wsUrl);
 
+      // Use standard WebSocket constructor as per MDN documentation
       this.ws = new WebSocket(wsUrl);
 
       return new Promise((resolve) => {
-        const connectionTimeout = setTimeout(() => {
-          console.warn('WebSocket connection timeout - falling back to polling');
+        // Set connection timeout (5 seconds as per best practices)
+        this.connectionTimeout = setTimeout(() => {
+          console.warn('WebSocket connection timeout - graceful fallback to polling');
           this.handleConnectionFailure();
           resolve(false);
-        }, 5000); // Reduced timeout to 5 seconds
+        }, 5000);
 
+        // Standard WebSocket event handlers as per MDN documentation
         this.ws!.onopen = () => {
-          clearTimeout(connectionTimeout);
-          console.log('WebSocket connected successfully');
+          if (this.connectionTimeout) {
+            clearTimeout(this.connectionTimeout);
+            this.connectionTimeout = null;
+          }
+          
+          console.log('WebSocket connection established successfully');
           this.isConnected = true;
           this.isConnecting = false;
           this.reconnectAttempts = 0;
           this.reconnectDelay = 1000; // Reset delay
           this.startHeartbeat();
           this.processMessageQueue();
+          
+          // Emit connection established event
+          this.emit('connection_established', {
+            type: 'connection_established',
+            data: { connected: true, latency: this.latency },
+            timestamp: new Date().toISOString(),
+            messageId: `conn_established_${Date.now()}`
+          });
+          
           resolve(true);
         };
 
@@ -92,30 +158,38 @@ class RealTimeClient {
         };
 
         this.ws!.onclose = (event) => {
-          clearTimeout(connectionTimeout);
-          console.log('WebSocket connection closed:', event.code, event.reason);
-          this.handleDisconnection();
+          if (this.connectionTimeout) {
+            clearTimeout(this.connectionTimeout);
+            this.connectionTimeout = null;
+          }
+          
+          console.log(`WebSocket connection closed: ${event.code} - ${event.reason}`);
+          this.handleDisconnection(event.code, event.reason);
           resolve(false);
         };
 
         this.ws!.onerror = (error) => {
-          clearTimeout(connectionTimeout);
-          console.warn('WebSocket connection error - this is normal if WebSocket server is not available:', error);
+          if (this.connectionTimeout) {
+            clearTimeout(this.connectionTimeout);
+            this.connectionTimeout = null;
+          }
+          
+          console.warn('WebSocket connection error - graceful fallback available:', error);
           this.handleConnectionFailure();
           resolve(false);
         };
       });
     } catch (error) {
-      console.warn('WebSocket connection failed - using fallback polling:', error);
+      console.warn('WebSocket connection failed - using fallback synchronization:', error);
       this.handleConnectionFailure();
       return false;
     }
   }
 
   private getWebSocketUrl(): string {
-    // Use the same host and port as the current page to avoid CORS issues
+    // Construct WebSocket URL following MDN best practices
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host; // This includes port if present
+    const host = window.location.host; // Includes port if present
     
     const params = new URLSearchParams({
       playerId: this.playerId!,
@@ -123,15 +197,21 @@ class RealTimeClient {
       sessionId: this.sessionId!
     });
 
-    // Try to connect through the Next.js API route first
+    // Use dedicated WebSocket endpoint (not Next.js API route)
     return `${protocol}//${host}/api/websocket?${params}`;
   }
 
-  // Handle incoming messages
+  // Handle incoming messages with proper parsing and error handling
   private handleMessage(event: MessageEvent): void {
     try {
       const message: GameMessage = JSON.parse(event.data);
-      console.log('Received WebSocket message:', message);
+      
+      // Update latency for heartbeat responses
+      if (message.type === 'heartbeat' && this.lastPingTime > 0) {
+        this.latency = Date.now() - this.lastPingTime;
+      }
+      
+      console.log('Received WebSocket message:', message.type, message.messageId);
 
       // Emit to specific event listeners
       this.emit(message.type, message);
@@ -140,27 +220,46 @@ class RealTimeClient {
       this.emit('message', message);
     } catch (error) {
       console.error('Error parsing WebSocket message:', error);
+      this.emit('error', {
+        type: 'error',
+        data: { 
+          message: 'Message parsing error', 
+          error: error instanceof Error ? error.message : String(error)
+        },
+        timestamp: new Date().toISOString(),
+        messageId: `parse_error_${Date.now()}`
+      });
     }
   }
 
-  // Handle disconnection
-  private handleDisconnection(): void {
+  // Handle disconnection with proper close code analysis
+  private handleDisconnection(code?: number, reason?: string): void {
     this.isConnected = false;
     this.isConnecting = false;
     this.stopHeartbeat();
     
-    // Attempt reconnection if not intentional
-    if (this.reconnectAttempts < this.maxReconnectAttempts) {
+    // Analyze close codes as per WebSocket RFC
+    const shouldReconnect = !code || (code !== 1000 && code !== 1001 && code !== 1005);
+    
+    if (shouldReconnect && this.reconnectAttempts < this.maxReconnectAttempts) {
+      const delay = Math.min(this.reconnectDelay * Math.pow(2, this.reconnectAttempts), 30000);
+      console.log(`Attempting reconnection in ${delay}ms (attempt ${this.reconnectAttempts + 1}/${this.maxReconnectAttempts})`);
+      
       setTimeout(() => {
         this.reconnect();
-      }, this.reconnectDelay);
-    } else {
+      }, delay);
+    } else if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       console.error('Max reconnection attempts reached');
       this.emit('max_reconnect_attempts', {
         type: 'error',
-        data: { message: 'Failed to reconnect after multiple attempts' },
+        data: { 
+          message: 'Failed to reconnect after multiple attempts',
+          code,
+          reason,
+          attempts: this.reconnectAttempts
+        },
         timestamp: new Date().toISOString(),
-        messageId: `error_${Date.now()}`
+        messageId: `max_reconnect_${Date.now()}`
       });
     }
   }
@@ -184,7 +283,7 @@ class RealTimeClient {
     }
   }
 
-  // Send message to server
+  // Send message with backpressure handling as per MDN recommendations
   send(message: Omit<GameMessage, 'timestamp' | 'messageId'>): void {
     const fullMessage: GameMessage = {
       ...message,
@@ -193,26 +292,62 @@ class RealTimeClient {
     };
 
     if (this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(fullMessage));
+      try {
+        // Check bufferedAmount for backpressure handling
+        if (this.ws.bufferedAmount > 1024 * 1024) { // 1MB threshold
+          console.warn('WebSocket buffer full, queuing message');
+          this.messageQueue.enqueue(fullMessage);
+        } else {
+          this.ws.send(JSON.stringify(fullMessage));
+        }
+      } catch (error) {
+        console.error('Error sending WebSocket message:', error);
+        this.messageQueue.enqueue(fullMessage);
+      }
     } else {
       // Queue message for when connection is restored
-      this.messageQueue.push(fullMessage);
+      this.messageQueue.enqueue(fullMessage);
       console.log('WebSocket not connected, message queued');
     }
   }
 
-  // Process queued messages
+  // Process queued messages with rate limiting
   private processMessageQueue(): void {
-    while (this.messageQueue.length > 0) {
-      const message = this.messageQueue.shift()!;
-      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-        this.ws.send(JSON.stringify(message));
-      } else {
-        // Re-queue if connection lost
-        this.messageQueue.unshift(message);
-        break;
+    if (this.messageQueue.isProcessing()) return;
+    
+    this.messageQueue.setProcessing(true);
+    
+    const processNext = () => {
+      const message = this.messageQueue.dequeue();
+      if (!message) {
+        this.messageQueue.setProcessing(false);
+        return;
       }
-    }
+      
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        try {
+          // Check backpressure before sending
+          if (this.ws.bufferedAmount < 1024 * 1024) { // 1MB threshold
+            this.ws.send(JSON.stringify(message));
+            // Process next message with small delay to avoid overwhelming
+            setTimeout(processNext, 10);
+          } else {
+            // Re-queue message and wait for buffer to clear
+            this.messageQueue.enqueue(message);
+            setTimeout(processNext, 100);
+          }
+        } catch (error) {
+          console.error('Error sending queued message:', error);
+          setTimeout(processNext, 10);
+        }
+      } else {
+        // Connection lost, stop processing
+        this.messageQueue.enqueue(message);
+        this.messageQueue.setProcessing(false);
+      }
+    };
+    
+    processNext();
   }
 
   // Join a room
@@ -276,16 +411,17 @@ class RealTimeClient {
     }
   }
 
-  // Heartbeat system
+  // Heartbeat system with latency measurement
   private startHeartbeat(): void {
     this.heartbeatInterval = setInterval(() => {
-      if (this.isConnected) {
+      if (this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN) {
+        this.lastPingTime = Date.now();
         this.send({
           type: 'heartbeat',
           playerId: this.playerId!
         });
       }
-    }, 30000); // Send heartbeat every 30 seconds
+    }, 30000); // Send heartbeat every 30 seconds as per best practices
   }
 
   private stopHeartbeat(): void {
@@ -295,27 +431,43 @@ class RealTimeClient {
     }
   }
 
-  // Disconnect
+  // Disconnect with proper cleanup
   disconnect(): void {
+    console.log('Disconnecting WebSocket client gracefully');
+    
     this.reconnectAttempts = this.maxReconnectAttempts; // Prevent auto-reconnection
     this.stopHeartbeat();
     
+    if (this.connectionTimeout) {
+      clearTimeout(this.connectionTimeout);
+      this.connectionTimeout = null;
+    }
+    
     if (this.ws) {
-      this.ws.close();
+      // Send close frame with proper code (normal closure)
+      this.ws.close(1000, 'Client disconnect');
       this.ws = null;
     }
     
     this.isConnected = false;
     this.isConnecting = false;
-    this.messageQueue = [];
+    this.messageQueue.clear();
   }
 
-  // Get connection status
-  getConnectionStatus(): { connected: boolean; connecting: boolean; reconnectAttempts: number } {
+  // Get comprehensive connection status
+  getConnectionStatus(): { 
+    connected: boolean; 
+    connecting: boolean; 
+    reconnectAttempts: number;
+    latency: number;
+    queueSize: number;
+  } {
     return {
       connected: this.isConnected,
       connecting: this.isConnecting,
-      reconnectAttempts: this.reconnectAttempts
+      reconnectAttempts: this.reconnectAttempts,
+      latency: this.latency,
+      queueSize: this.messageQueue.size()
     };
   }
 }
