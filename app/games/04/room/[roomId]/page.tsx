@@ -39,17 +39,27 @@ const RoomPage: React.FC = () => {
       return;
     }
 
-    // Check if room exists and is accessible
-    const roomData = roomManager.getRoom(roomId);
-    
-    if (!roomData) {
-      setError('Room not found or no longer accessible');
-      setLoading(false);
-      return;
-    }
+    // Check if room exists with API fallback for cross-device access
+    const checkRoom = async () => {
+      try {
+        const roomData = await roomManager.getRoomWithAPIFallback(roomId);
+        
+        if (!roomData) {
+          setError('Room not found or no longer accessible');
+          setLoading(false);
+          return;
+        }
 
-    setRoom(roomData);
-    setLoading(false);
+        setRoom(roomData);
+        setLoading(false);
+      } catch (error) {
+        console.error('Failed to access room:', error);
+        setError('Failed to access room');
+        setLoading(false);
+      }
+    };
+
+    checkRoom();
   }, [roomId]);
 
   if (loading) {

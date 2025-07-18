@@ -1,5 +1,7 @@
 // Room Management Service for UNO-Like Game
-// Handles room state, cleanup, and route accessibility
+// Handles room state, cleanup, and route accessibility with real-time updates
+
+import realTimeClient from './realTimeClient';
 
 export interface Player {
   id: string;
@@ -71,16 +73,30 @@ class RoomManager {
   private readonly CLEANUP_INTERVAL = 5 * 60 * 1000; // 5 minutes
   private readonly STORAGE_KEY = 'unolike_rooms';
   private readonly AI_DEALER_ID = 'ai-dealer-bot';
-  private readonly AUTO_START_CHECK_INTERVAL = 2000; // Check every 2 seconds for auto-start
+  private readonly AUTO_START_CHECK_INTERVAL = 3000; // Check every 3 seconds for auto-start (reduced frequency)
+  private readonly API_SYNC_INTERVAL = 5000; // Sync with API every 5 seconds (reduced frequency)
+  private apiSyncEnabled = false;
+  private realTimeEnabled = false;
+  private roomUpdateListeners: Map<string, Set<(room: Room) => void>> = new Map();
   
   constructor() {
     // Load rooms from localStorage
     this.loadRooms();
     
-    // Start cleanup timer
+    // Enable API sync if we're in a browser environment
     if (typeof window !== 'undefined') {
+      this.apiSyncEnabled = true;
+      this.realTimeEnabled = true;
+      
+      // Start cleanup timer
       setInterval(() => this.cleanupInactiveRooms(), this.CLEANUP_INTERVAL);
       setInterval(() => this.checkAutoStart(), this.AUTO_START_CHECK_INTERVAL);
+      
+      // Start API synchronization
+      setInterval(() => this.syncWithAPI(), this.API_SYNC_INTERVAL);
+      
+      // Set up real-time listeners
+      this.setupRealTimeListeners();
       
       // Listen for storage changes from other tabs
       window.addEventListener('storage', (event) => {
@@ -162,10 +178,129 @@ class RoomManager {
     return room || null;
   }
 
+  // Get a room by ID with API fallback for cross-device access
+  async getRoomWithAPIFallback(roomId: string): Promise<Room | null> {
+    // First, try to get from local storage
+    const room = this.getRoom(roomId);
+    
+    if (room) {
+      return room;
+    }
+    
+    // If not found locally and API sync is enabled, check API
+    if (this.apiSyncEnabled && typeof window !== 'undefined') {
+      try {
+        const response = await fetch(`/api/rooms?roomId=${encodeURIComponent(roomId.toUpperCase())}`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && data.room) {
+            // Convert API room data to local Room format
+            const apiRoomState = data.room;
+            const convertedRoom: Room = {
+              ...apiRoomState,
+              createdAt: new Date(apiRoomState.createdAt),
+              lastActivity: new Date(apiRoomState.lastActivity),
+              gameStartedAt: apiRoomState.gameStartedAt ? new Date(apiRoomState.gameStartedAt) : undefined,
+              gameEndedAt: apiRoomState.gameEndedAt ? new Date(apiRoomState.gameEndedAt) : undefined,
+              players: apiRoomState.players.map((player: SerializedPlayer) => ({
+                ...player,
+                joinedAt: new Date(player.joinedAt),
+                lastActivity: new Date(player.lastActivity)
+              })),
+              waitingQueue: (apiRoomState.waitingQueue || []).map((player: SerializedPlayer) => ({
+                ...player,
+                joinedAt: new Date(player.joinedAt),
+                lastActivity: new Date(player.lastActivity)
+              }))
+            };
+            
+            // Add to local storage for future fast access
+            this.rooms.set(roomId.toUpperCase(), convertedRoom);
+            this.saveRoomsToLocalStorageOnly();
+            
+            return convertedRoom;
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to fetch room from API:', error);
+      }
+    }
+    
+    return null;
+  }
+
   // Check if a room exists and is accessible
   isRoomAccessible(roomId: string): boolean {
     const room = this.getRoom(roomId, true);
     return room !== null;
+  }
+
+  // Check if a room exists and is accessible with API fallback
+  async isRoomAccessibleWithAPIFallback(roomId: string): Promise<boolean> {
+    const room = await this.getRoomWithAPIFallback(roomId);
+    return room !== null;
+  }
+
+  // Join a room with API fallback for cross-device access
+  async joinRoomWithAPIFallback(roomId: string, player: Omit<Player, 'isHost' | 'joinedAt' | 'lastActivity'>): Promise<{ success: boolean; room?: Room; error?: string; inQueue?: boolean }> {
+    // First try to get room with API fallback
+    const room = await this.getRoomWithAPIFallback(roomId);
+    
+    if (!room) {
+      return { success: false, error: 'Room not found' };
+    }
+
+    // Check for duplicate usernames (excluding AI Dealer)
+    if (room.players.some(p => p.id !== this.AI_DEALER_ID && p.username === player.username)) {
+      return { success: false, error: 'Username already taken in this room' };
+    }
+
+    // Also check waiting queue for duplicate names
+    if (room.waitingQueue.some(p => p.username === player.username)) {
+      return { success: false, error: 'Username already taken in this room' };
+    }
+
+    // Check if room is full
+    if (room.players.length >= room.maxPlayers) {
+      // Check if player is already in queue
+      if (room.waitingQueue.some(p => p.username === player.username)) {
+        return { success: false, error: 'Already in waiting queue' };
+      }
+      
+      // Add to waiting queue
+      const queuePlayer: Player = {
+        ...player,
+        isHost: false,
+        joinedAt: new Date(),
+        lastActivity: new Date(),
+        status: 'in_queue'
+      };
+      
+      room.waitingQueue.push(queuePlayer);
+      room.lastActivity = new Date();
+      
+      // Update both local and API
+      this.rooms.set(roomId.toUpperCase(), room);
+      this.saveRooms();
+      
+      return { success: true, room, inQueue: true };
+    }
+
+    const newPlayer: Player = {
+      ...player,
+      isHost: false,
+      joinedAt: new Date(),
+      lastActivity: new Date()
+    };
+
+    room.players.push(newPlayer);
+    room.lastActivity = new Date();
+    
+    // Update both local and API
+    this.rooms.set(roomId.toUpperCase(), room);
+    this.saveRooms();
+    
+    return { success: true, room };
   }
 
   // Join a room
@@ -206,6 +341,9 @@ class RoomManager {
       room.lastActivity = new Date();
       this.saveRooms();
       
+      // Broadcast real-time update
+      this.broadcastRoomUpdate(roomId, room);
+      
       return { success: true, room, inQueue: true };
     }
 
@@ -219,6 +357,14 @@ class RoomManager {
     room.players.push(newPlayer);
     room.lastActivity = new Date();
     this.saveRooms();
+    
+    // Broadcast real-time update
+    this.broadcastRoomUpdate(roomId, room);
+    
+    // Also join the WebSocket room for real-time updates
+    if (this.realTimeEnabled) {
+      realTimeClient.joinRoom(roomId);
+    }
     
     return { success: true, room };
   }
@@ -247,6 +393,12 @@ class RoomManager {
       if (humanPlayers.length === 0 && room.waitingQueue.length === 0) {
         this.rooms.delete(roomId);
         this.saveRooms();
+        
+        // Leave WebSocket room
+        if (this.realTimeEnabled) {
+          realTimeClient.leaveRoom(roomId);
+        }
+        
         return { success: true, roomDeleted: true };
       }
 
@@ -258,6 +410,15 @@ class RoomManager {
       }
 
       this.saveRooms();
+      
+      // Broadcast real-time update
+      this.broadcastRoomUpdate(roomId, room);
+      
+      // Leave WebSocket room
+      if (this.realTimeEnabled) {
+        realTimeClient.leaveRoom(roomId);
+      }
+      
       return { success: true, room };
     }
     
@@ -276,6 +437,10 @@ class RoomManager {
       }
       
       this.saveRooms();
+      
+      // Broadcast real-time update
+      this.broadcastRoomUpdate(roomId, room);
+      
       return { success: true, room };
     }
 
@@ -285,6 +450,29 @@ class RoomManager {
   // Check if player exists in room (either in main room or queue)
   isPlayerInRoom(roomId: string, playerId: string): { inRoom: boolean; inQueue: boolean; player?: Player } {
     const room = this.getRoom(roomId);
+    
+    if (!room) {
+      return { inRoom: false, inQueue: false };
+    }
+
+    // Check main room
+    const mainPlayer = room.players.find(p => p.id === playerId);
+    if (mainPlayer) {
+      return { inRoom: true, inQueue: false, player: mainPlayer };
+    }
+
+    // Check waiting queue
+    const queuedPlayer = room.waitingQueue.find(p => p.id === playerId);
+    if (queuedPlayer) {
+      return { inRoom: false, inQueue: true, player: queuedPlayer };
+    }
+
+    return { inRoom: false, inQueue: false };
+  }
+
+  // Check if player exists in room with API fallback for cross-device access
+  async isPlayerInRoomWithAPIFallback(roomId: string, playerId: string): Promise<{ inRoom: boolean; inQueue: boolean; player?: Player }> {
+    const room = await this.getRoomWithAPIFallback(roomId);
     
     if (!room) {
       return { inRoom: false, inQueue: false };
@@ -511,8 +699,221 @@ class RoomManager {
     };
   }
 
+  // Set up real-time listeners for room updates
+  private setupRealTimeListeners(): void {
+    realTimeClient.on('room_update', (message) => {
+      if (message.roomId && message.data?.room) {
+        const { room } = message.data;
+        
+        // Update local room state
+        this.updateLocalRoom(room as Room);
+        
+        console.log('Real-time room update received for room', message.roomId);
+      }
+    });
+
+    realTimeClient.on('player_update', (message) => {
+      if (message.roomId && message.data) {
+        const room = this.rooms.get(message.roomId);
+        if (room) {
+          // Refresh room data and notify listeners
+          this.notifyRoomUpdateListeners(message.roomId, room);
+          
+          console.log('Real-time player update received for room', message.roomId);
+        }
+      }
+    });
+  }
+
+  // Update local room state with real-time data
+  private updateLocalRoom(roomData: Room): void {
+    const room: Room = {
+      ...roomData,
+      players: roomData.players.map((player: SerializedPlayer | Player): Player => {
+        // Handle both serialized and non-serialized players
+        if (typeof player.joinedAt === 'string') {
+          return {
+            ...player,
+            joinedAt: new Date(player.joinedAt),
+            lastActivity: new Date(player.lastActivity)
+          } as Player;
+        }
+        return player as Player;
+      }),
+      waitingQueue: roomData.waitingQueue.map((player: SerializedPlayer | Player): Player => {
+        // Handle both serialized and non-serialized players
+        if (typeof player.joinedAt === 'string') {
+          return {
+            ...player,
+            joinedAt: new Date(player.joinedAt),
+            lastActivity: new Date(player.lastActivity)
+          } as Player;
+        }
+        return player as Player;
+      }),
+      createdAt: typeof roomData.createdAt === 'string' ? new Date(roomData.createdAt) : roomData.createdAt,
+      lastActivity: typeof roomData.lastActivity === 'string' ? new Date(roomData.lastActivity) : roomData.lastActivity,
+      gameStartedAt: roomData.gameStartedAt ? 
+        (typeof roomData.gameStartedAt === 'string' ? new Date(roomData.gameStartedAt) : roomData.gameStartedAt) : 
+        undefined,
+      gameEndedAt: roomData.gameEndedAt ? 
+        (typeof roomData.gameEndedAt === 'string' ? new Date(roomData.gameEndedAt) : roomData.gameEndedAt) : 
+        undefined
+    };
+    
+    this.rooms.set(room.id, room);
+    this.saveRoomsToLocalStorageOnly(); // Don't trigger API sync for real-time updates
+    this.notifyRoomUpdateListeners(room.id, room);
+  }
+
+  // Add room update listener
+  addRoomUpdateListener(roomId: string, listener: (room: Room) => void): void {
+    if (!this.roomUpdateListeners.has(roomId)) {
+      this.roomUpdateListeners.set(roomId, new Set());
+    }
+    this.roomUpdateListeners.get(roomId)!.add(listener);
+  }
+
+  // Remove room update listener
+  removeRoomUpdateListener(roomId: string, listener: (room: Room) => void): void {
+    const listeners = this.roomUpdateListeners.get(roomId);
+    if (listeners) {
+      listeners.delete(listener);
+      if (listeners.size === 0) {
+        this.roomUpdateListeners.delete(roomId);
+      }
+    }
+  }
+
+  // Notify all listeners for a room
+  private notifyRoomUpdateListeners(roomId: string, room: Room): void {
+    const listeners = this.roomUpdateListeners.get(roomId);
+    if (listeners) {
+      for (const listener of listeners) {
+        try {
+          listener(room);
+        } catch (error) {
+          console.error('Error in room update listener:', error);
+        }
+      }
+    }
+  }
+
+  // Broadcast room update via real-time
+  private broadcastRoomUpdate(roomId: string, room: Room): void {
+    if (this.realTimeEnabled) {
+      realTimeClient.sendGameAction(roomId, 'room_update', {
+        room: this.serializeRoom(room),
+        timestamp: new Date().toISOString()
+      });
+    }
+  }
+
+  // Serialize room for real-time broadcasting
+  private serializeRoom(room: Room): SerializedRoom {
+    return {
+      ...room,
+      players: room.players.map((player: Player): SerializedPlayer => ({
+        ...player,
+        joinedAt: player.joinedAt.toISOString(),
+        lastActivity: player.lastActivity.toISOString()
+      })),
+      waitingQueue: room.waitingQueue.map((player: Player): SerializedPlayer => ({
+        ...player,
+        joinedAt: player.joinedAt.toISOString(),
+        lastActivity: player.lastActivity.toISOString()
+      })),
+      createdAt: room.createdAt.toISOString(),
+      lastActivity: room.lastActivity.toISOString(),
+      gameStartedAt: room.gameStartedAt?.toISOString(),
+      gameEndedAt: room.gameEndedAt?.toISOString()
+    };
+  }
+
   // Save rooms to localStorage
   private saveRooms(): void {
+    if (typeof window === 'undefined') return;
+    
+    try {
+      const roomsArray = Array.from(this.rooms.entries()).map(([id, room]) => [id, room]);
+      localStorage.setItem(this.STORAGE_KEY, JSON.stringify(roomsArray));
+      
+      // Also sync to API if enabled
+      if (this.apiSyncEnabled) {
+        this.syncRoomsToAPI();
+      }
+    } catch (error) {
+      console.warn('Failed to save rooms to localStorage:', error);
+    }
+  }
+
+  // Sync rooms to API
+  private async syncRoomsToAPI(): Promise<void> {
+    if (!this.apiSyncEnabled || typeof window === 'undefined') return;
+    
+    try {
+      for (const [roomId, room] of this.rooms) {
+        await fetch('/api/rooms', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ roomId, roomState: room })
+        });
+      }
+    } catch (error) {
+      console.warn('Failed to sync rooms to API:', error);
+    }
+  }
+
+  // Sync from API
+  private async syncWithAPI(): Promise<void> {
+    if (!this.apiSyncEnabled || typeof window === 'undefined') return;
+    
+    try {
+      // Get all rooms from API
+      const response = await fetch('/api/rooms');
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.rooms) {
+          // Check if any room from API is newer than local
+          for (const apiRoom of data.rooms) {
+            const localRoom = this.rooms.get(apiRoom.id);
+            const apiRoomState = apiRoom.state;
+            
+            if (!localRoom || new Date(apiRoomState.lastActivity) > new Date(localRoom.lastActivity)) {
+              // API has newer data, update local
+              const convertedRoom: Room = {
+                ...apiRoomState,
+                createdAt: new Date(apiRoomState.createdAt),
+                lastActivity: new Date(apiRoomState.lastActivity),
+                gameStartedAt: apiRoomState.gameStartedAt ? new Date(apiRoomState.gameStartedAt) : undefined,
+                gameEndedAt: apiRoomState.gameEndedAt ? new Date(apiRoomState.gameEndedAt) : undefined,
+                players: apiRoomState.players.map((player: SerializedPlayer) => ({
+                  ...player,
+                  joinedAt: new Date(player.joinedAt),
+                  lastActivity: new Date(player.lastActivity)
+                })),
+                waitingQueue: (apiRoomState.waitingQueue || []).map((player: SerializedPlayer) => ({
+                  ...player,
+                  joinedAt: new Date(player.joinedAt),
+                  lastActivity: new Date(player.lastActivity)
+                }))
+              };
+              
+              this.rooms.set(apiRoom.id, convertedRoom);
+            }
+          }
+          
+          // Save updated data to localStorage
+          this.saveRoomsToLocalStorageOnly();
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to sync from API:', error);
+    }
+  }
+
+  // Save to localStorage only (without triggering API sync)
+  private saveRoomsToLocalStorageOnly(): void {
     if (typeof window === 'undefined') return;
     
     try {

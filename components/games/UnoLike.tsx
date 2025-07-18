@@ -31,7 +31,8 @@ import {
   NumberInputField,
   NumberInputStepper,
   NumberIncrementStepper,
-  NumberDecrementStepper
+  NumberDecrementStepper,
+  Spinner
 } from '@chakra-ui/react';
 import { 
   FaUsers, 
@@ -40,7 +41,9 @@ import {
   FaPlus,
   FaSignInAlt,
   FaCog,
-  FaGamepad
+  FaGamepad,
+  FaUserShield,
+  FaTrash
 } from 'react-icons/fa';
 
 // Types
@@ -62,6 +65,7 @@ const UnoLike: React.FC = () => {
   const toast = useToast();
   const { isOpen: isStatsOpen, onOpen: onStatsOpen, onClose: onStatsClose } = useDisclosure();
   const { isOpen: isSettingsOpen, onOpen: onSettingsOpen, onClose: onSettingsClose } = useDisclosure();
+  const { isOpen: isSessionOpen, onOpen: onSessionOpen, onClose: onSessionClose } = useDisclosure();
   
   // State
   const [playerName, setPlayerName] = useState<string>('');
@@ -76,17 +80,49 @@ const UnoLike: React.FC = () => {
   // Statistics
   const [globalGamesPlayed, setGlobalGamesPlayed] = useState<number>(0);
   
-  // Generate a unique card ID for internal use
-  const generateCardId = (): string => {
-    return Math.random().toString(36).substring(2, 15);
-  };
+  // Session manager for persistent player identity
+  const [isInitialized, setIsInitialized] = useState(false);
+  const [isSessionActive, setIsSessionActive] = useState(false);
+  const [sessionInfo, setSessionInfo] = useState<string>('');
   
-  // Create a new room
-  const createRoom = (type: RoomType = 'public') => {
+  // Initialize session on component mount and load existing username
+  useEffect(() => {
+    const initSession = async () => {
+      try {
+        // Import session manager dynamically
+        const { default: sessionManager } = await import('@/lib/sessionManager');
+        const session = await sessionManager.initializeSession();
+        
+        // If session exists and has a username, populate the field and mark as active
+        if (session && session.username) {
+          setPlayerName(session.username);
+          setIsSessionActive(true);
+          
+          const sessionAge = Math.floor((Date.now() - session.createdAt.getTime()) / (1000 * 60));
+          setSessionInfo(`Active session for "${session.username}" (${sessionAge}m old)`);
+        } else {
+          setIsSessionActive(false);
+          setSessionInfo('Enter your name to create a session');
+        }
+        
+        setIsInitialized(true);
+      } catch (error) {
+        console.error('Failed to initialize session:', error);
+        setSessionInfo('Session initialization failed - using fallback');
+        setIsSessionActive(false);
+        setIsInitialized(true); // Still allow app to work
+      }
+    };
+    
+    initSession();
+  }, []); // Remove playerName dependency to avoid loops
+  
+  // Create session immediately when player confirms their name
+  const confirmPlayerName = async () => {
     if (!playerName.trim()) {
       toast({
         title: "Enter your name",
-        description: "Please enter your name to create a room",
+        description: "Please enter your name to create a session",
         status: "warning",
         duration: 3000,
         isClosable: true
@@ -94,27 +130,86 @@ const UnoLike: React.FC = () => {
       return;
     }
     
-    const playerId = generateCardId();
-    const trimmedName = playerName.trim();
+    if (!isInitialized) {
+      toast({
+        title: "Please wait",
+        description: "Initializing...",
+        status: "info",
+        duration: 2000,
+        isClosable: true
+      });
+      return;
+    }
     
-    // Store player info for the room
-    localStorage.setItem('player_name', trimmedName);
-    localStorage.setItem('temp_player_id', playerId);
+    try {
+      const trimmedName = playerName.trim();
+      
+      // Create session immediately
+      const { default: sessionManager } = await import('@/lib/sessionManager');
+      const session = await sessionManager.createOrUpdateSession(trimmedName);
+      
+      if (session) {
+        setIsSessionActive(true);
+        setSessionInfo(`Active session for "${session.username}"`);
+        
+        toast({
+          title: "Session created!",
+          description: `Welcome, ${session.username}! You can now join or create rooms.`,
+          status: "success",
+          duration: 3000,
+          isClosable: true
+        });
+      } else {
+        throw new Error('Failed to create session');
+      }
+    } catch (error) {
+      console.error('Failed to create session:', error);
+      toast({
+        title: "Failed to create session",
+        description: "Please try again",
+        status: "error",
+        duration: 3000,
+        isClosable: true
+      });
+    }
+  };
+  
+  // Create a new room
+  const createRoom = async (type: RoomType = 'public') => {
+    if (!isSessionActive) {
+      toast({
+        title: "No active session",
+        description: "Please confirm your name first to create a session",
+        status: "warning",
+        duration: 3000,
+        isClosable: true
+      });
+      return;
+    }
     
-    const newPlayer = {
-      id: playerId,
-      username: trimmedName,
-      handCount: 0,
-      status: 'waiting' as const,
-      ready: false
-    };
-    
-    // Import room manager
-    import('@/lib/roomManager').then(({ default: roomManager }) => {
+    try {
+      // Get player info from existing session
+      const { default: sessionManager } = await import('@/lib/sessionManager');
+      const playerInfo = await sessionManager.getPlayerInfo();
+      
+      if (!playerInfo) {
+        throw new Error('Session expired or invalid');
+      }
+      
+      const newPlayer = {
+        id: playerInfo.id,
+        username: playerInfo.username,
+        handCount: 0,
+        status: 'waiting' as const,
+        ready: false
+      };
+      
+      // Import room manager
+      const { default: roomManager } = await import('@/lib/roomManager');
       const room = roomManager.createRoom(newPlayer, gameSettings, type);
       
-      // Store room-specific player info
-      localStorage.setItem(`player_${room.id}`, playerId);
+      // Update session with room info
+      await sessionManager.updateCurrentRoom(room.id);
       
       toast({
         title: "Room created!",
@@ -126,15 +221,24 @@ const UnoLike: React.FC = () => {
       
       // Navigate to the room URL
       window.location.href = `/games/04/room/${room.id}`;
-    });
+    } catch (error) {
+      console.error('Failed to create room:', error);
+      toast({
+        title: "Failed to create room",
+        description: "Please try again or refresh your session",
+        status: "error",
+        duration: 3000,
+        isClosable: true
+      });
+    }
   };
   
   // Join an existing room
-  const joinRoom = (code: string = joinCode) => {
-    if (!playerName.trim()) {
+  const joinRoom = async (code: string = joinCode) => {
+    if (!isSessionActive) {
       toast({
-        title: "Enter your name",
-        description: "Please enter your name to join a room",
+        title: "No active session",
+        description: "Please confirm your name first to create a session",
         status: "warning",
         duration: 3000,
         isClosable: true
@@ -153,19 +257,22 @@ const UnoLike: React.FC = () => {
       return;
     }
     
-    const roomCode = code.toUpperCase();
-    const trimmedName = playerName.trim();
-    const playerId = generateCardId();
-    
-    // Store player info for the room
-    localStorage.setItem('player_name', trimmedName);
-    localStorage.setItem('temp_player_id', playerId);
-    
-    // Check if room exists and navigate to it
-    import('@/lib/roomManager').then(({ default: roomManager }) => {
+    try {
+      const roomCode = code.toUpperCase();
+      
+      // Get player info from existing session
+      const { default: sessionManager } = await import('@/lib/sessionManager');
+      const playerInfo = await sessionManager.getPlayerInfo();
+      
+      if (!playerInfo) {
+        throw new Error('Session expired or invalid');
+      }
+      
+      // Check if room exists and navigate to it
+      const { default: roomManager } = await import('@/lib/roomManager');
       if (roomManager.isRoomAccessible(roomCode)) {
-        // Store room-specific player info
-        localStorage.setItem(`player_${roomCode}`, playerId);
+        // Update session with room info
+        await sessionManager.updateCurrentRoom(roomCode);
         
         // Navigate to the room URL - the room page will handle the actual joining
         window.location.href = `/games/04/room/${roomCode}`;
@@ -178,15 +285,24 @@ const UnoLike: React.FC = () => {
           isClosable: true
         });
       }
-    });
+    } catch (error) {
+      console.error('Failed to join room:', error);
+      toast({
+        title: "Failed to join room",
+        description: "Please try again or refresh your session",
+        status: "error",
+        duration: 3000,
+        isClosable: true
+      });
+    }
   };
   
   // Quick play - join any available public room
-  const quickPlay = () => {
-    if (!playerName.trim()) {
+  const quickPlay = async () => {
+    if (!isSessionActive) {
       toast({
-        title: "Enter your name",
-        description: "Please enter your name for quick play",
+        title: "No active session",
+        description: "Please confirm your name first to create a session",
         status: "warning",
         duration: 3000,
         isClosable: true
@@ -194,36 +310,36 @@ const UnoLike: React.FC = () => {
       return;
     }
     
-    const trimmedName = playerName.trim();
-    const playerId = generateCardId();
-    
-    // Store player info for the room
-    localStorage.setItem('player_name', trimmedName);
-    localStorage.setItem('temp_player_id', playerId);
-    
-    // Get available public rooms
-    import('@/lib/roomManager').then(({ default: roomManager }) => {
+    try {
+      // Get player info from existing session
+      const { default: sessionManager } = await import('@/lib/sessionManager');
+      const playerInfo = await sessionManager.getPlayerInfo();
+      
+      if (!playerInfo) {
+        throw new Error('Session expired or invalid');
+      }
+      
+      // Get available public rooms
+      const { default: roomManager } = await import('@/lib/roomManager');
       const publicRooms = roomManager.getPublicRooms();
       
       if (publicRooms.length > 0) {
         // Join the first available public room
         const targetRoom = publicRooms[0];
-        localStorage.setItem(`player_${targetRoom.id}`, playerId);
+        await sessionManager.updateCurrentRoom(targetRoom.id);
         window.location.href = `/games/04/room/${targetRoom.id}`;
       } else {
         // No public rooms available, create one
         const newPlayer = {
-          id: playerId,
-          username: trimmedName,
+          id: playerInfo.id,
+          username: playerInfo.username,
           handCount: 0,
           status: 'waiting' as const,
           ready: false
         };
         
         const room = roomManager.createRoom(newPlayer, gameSettings, 'public');
-        
-        // Store room-specific player info
-        localStorage.setItem(`player_${room.id}`, playerId);
+        await sessionManager.updateCurrentRoom(room.id);
         
         toast({
           title: "Created new public room",
@@ -235,7 +351,16 @@ const UnoLike: React.FC = () => {
         
         window.location.href = `/games/04/room/${room.id}`;
       }
-    });
+    } catch (error) {
+      console.error('Failed to quick play:', error);
+      toast({
+        title: "Failed to quick play",
+        description: "Please try again or refresh your session",
+        status: "error",
+        duration: 3000,
+        isClosable: true
+      });
+    }
   };
   
   // Load global games played from localStorage
@@ -251,7 +376,69 @@ const UnoLike: React.FC = () => {
     localStorage.setItem('unolike_global_games', globalGamesPlayed.toString());
   }, [globalGamesPlayed]);
 
+  // Clear current session
+  const clearSession = async () => {
+    try {
+      const { default: sessionManager } = await import('@/lib/sessionManager');
+      const success = await sessionManager.clearSession();
+      
+      if (success) {
+        setPlayerName('');
+        setIsSessionActive(false);
+        setSessionInfo('Session cleared - enter your name to create a new session');
+        toast({
+          title: "Session cleared",
+          description: "Your session has been reset",
+          status: "success",
+          duration: 3000,
+          isClosable: true
+        });
+      } else {
+        throw new Error('Failed to clear session');
+      }
+    } catch (error) {
+      console.error('Failed to clear session:', error);
+      toast({
+        title: "Failed to clear session",
+        description: "Please try refreshing the page",
+        status: "error",
+        duration: 3000,
+        isClosable: true
+      });
+    }
+  };
+
   // Render setup screen
+  if (!isInitialized) {
+    return (
+      <VStack spacing={8} maxW="800px" mx="auto">
+        <VStack spacing={4} textAlign="center">
+          <Heading size="xl" color={accentColor}>
+            UNO-Like Card Game
+          </Heading>
+          <Text color="gray.500" fontSize="lg">
+            The classic UNO experience, but with more exciting features!
+          </Text>
+          <Badge colorScheme="purple" fontSize="sm" px={3} py={1}>
+            Multiplayer Strategy Game
+          </Badge>
+        </VStack>
+
+        <Card bg={cardBg} w="full" maxW="500px">
+          <CardBody>
+            <VStack spacing={4} py={8}>
+              <Spinner size="xl" color={accentColor} />
+              <Text>Initializing session...</Text>
+              <Text fontSize="sm" color="gray.500" textAlign="center">
+                Setting up your secure player session for cross-device compatibility
+              </Text>
+            </VStack>
+          </CardBody>
+        </Card>
+      </VStack>
+    );
+  }
+  
   return (
     <VStack spacing={8} maxW="800px" mx="auto">
       <VStack spacing={4} textAlign="center">
@@ -277,12 +464,43 @@ const UnoLike: React.FC = () => {
           <VStack spacing={4}>
             <FormControl>
               <FormLabel>Your Name</FormLabel>
-              <Input
-                placeholder="Enter your player name"
-                value={playerName}
-                onChange={(e) => setPlayerName(e.target.value)}
-                maxLength={20}
-              />
+              <HStack spacing={2}>
+                <Input
+                  placeholder="Enter your player name"
+                  value={playerName}
+                  onChange={(e) => setPlayerName(e.target.value)}
+                  maxLength={20}
+                  isDisabled={isSessionActive}
+                />
+                {!isSessionActive ? (
+                  <Button
+                    colorScheme="blue"
+                    onClick={confirmPlayerName}
+                    isDisabled={!playerName.trim() || !isInitialized}
+                    isLoading={!isInitialized}
+                    loadingText="Wait"
+                    size="md"
+                    minW="100px"
+                  >
+                    Confirm
+                  </Button>
+                ) : (
+                  <Button
+                    colorScheme="red"
+                    variant="outline"
+                    onClick={clearSession}
+                    size="md"
+                    minW="100px"
+                  >
+                    Change
+                  </Button>
+                )}
+              </HStack>
+              {sessionInfo && (
+                <Text fontSize="xs" color={isSessionActive ? "green.600" : "gray.500"} mt={1}>
+                  {sessionInfo}
+                </Text>
+              )}
             </FormControl>
 
             <Divider />
@@ -294,7 +512,9 @@ const UnoLike: React.FC = () => {
                 leftIcon={<FaRandom />}
                 onClick={quickPlay}
                 w="full"
-                isDisabled={!playerName.trim()}
+                isDisabled={!isSessionActive}
+                isLoading={!isInitialized}
+                loadingText="Initializing"
               >
                 Quick Play
               </Button>
@@ -312,7 +532,9 @@ const UnoLike: React.FC = () => {
                 leftIcon={<FaPlus />}
                 onClick={() => createRoom('public')}
                 w="full"
-                isDisabled={!playerName.trim()}
+                isDisabled={!isSessionActive}
+                isLoading={!isInitialized}
+                loadingText="Initializing"
               >
                 Create Public Room
               </Button>
@@ -323,7 +545,9 @@ const UnoLike: React.FC = () => {
                 leftIcon={<FaKey />}
                 onClick={() => createRoom('private')}
                 w="full"
-                isDisabled={!playerName.trim()}
+                isDisabled={!isSessionActive}
+                isLoading={!isInitialized}
+                loadingText="Initializing"
               >
                 Create Private Room
               </Button>
@@ -348,7 +572,9 @@ const UnoLike: React.FC = () => {
                 size="lg"
                 w="full"
                 onClick={() => joinRoom()}
-                isDisabled={!playerName.trim() || !joinCode.trim()}
+                isDisabled={!isSessionActive || !joinCode.trim()}
+                isLoading={!isInitialized}
+                loadingText="Initializing"
               >
                 Join Room
               </Button>
@@ -372,6 +598,14 @@ const UnoLike: React.FC = () => {
                 onClick={onStatsOpen}
               >
                 Stats
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                leftIcon={<FaUserShield />}
+                onClick={onSessionOpen}
+              >
+                Session
               </Button>
             </HStack>
           </VStack>
@@ -456,6 +690,59 @@ const UnoLike: React.FC = () => {
               </Card>
               <Text color="gray.500" fontSize="sm" textAlign="center">
                 Statistics are tracked globally across all players
+              </Text>
+            </VStack>
+          </ModalBody>
+        </ModalContent>
+      </Modal>
+
+      {/* Session Management Modal */}
+      <Modal isOpen={isSessionOpen} onClose={onSessionClose} size="lg">
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>Session Management</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody pb={6}>
+            <VStack spacing={4}>
+              <Card w="full">
+                <CardBody>
+                  <VStack spacing={3}>
+                    <Text fontSize="lg" fontWeight="bold">Current Session</Text>
+                    <Text fontSize="sm" color="gray.600" textAlign="center">
+                      {sessionInfo || 'Session information loading...'}
+                    </Text>
+                    {playerName && (
+                      <Text fontSize="md">
+                        <strong>Username:</strong> {playerName}
+                      </Text>
+                    )}
+                  </VStack>
+                </CardBody>
+              </Card>
+              
+              <Card w="full">
+                <CardBody>
+                  <VStack spacing={3}>
+                    <Text fontSize="lg" fontWeight="bold">Session Actions</Text>
+                    <Text fontSize="sm" color="gray.600" textAlign="center">
+                      Clear your session to start fresh with a new identity. This will remove your current player session across all tabs.
+                    </Text>
+                    <Button
+                      colorScheme="red"
+                      variant="outline"
+                      leftIcon={<FaTrash />}
+                      onClick={clearSession}
+                      w="full"
+                    >
+                      Clear Session
+                    </Button>
+                  </VStack>
+                </CardBody>
+              </Card>
+              
+              <Text color="gray.500" fontSize="xs" textAlign="center">
+                Session Management uses secure HTTP-only cookies for cross-tab persistence. 
+                Sessions automatically expire after 7 days of inactivity.
               </Text>
             </VStack>
           </ModalBody>

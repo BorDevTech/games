@@ -49,97 +49,110 @@ const UnoLikeRoom: React.FC<UnoLikeRoomProps> = ({ roomId, initialRoom, onRoomDe
   const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null);
   const [isInQueue, setIsInQueue] = useState<boolean>(false);
 
-  // Initialize current player from URL or local storage
+  // Initialize current player from session
   useEffect(() => {
-    if (!currentPlayer) {
-      // Get player info from localStorage
-      const storedPlayerId = localStorage.getItem(`player_${roomId}`) || localStorage.getItem('temp_player_id');
-      const storedPlayerName = localStorage.getItem('player_name');
+    const initializePlayer = async () => {
+      if (currentPlayer) return;
       
-      if (!storedPlayerId || !storedPlayerName) {
-        // No stored player info, redirect back to main game page
-        toast({
-          title: "Player info missing",
-          description: "Please enter your name from the main game page first",
-          status: "warning",
-          duration: 3000,
-          isClosable: true
-        });
-        router.push('/games/04');
-        return;
-      }
-      
-      // Check if this player is already in the room
-      const playerCheck = roomManager.isPlayerInRoom(roomId, storedPlayerId);
-      if (playerCheck.inRoom && playerCheck.player) {
-        setCurrentPlayer(playerCheck.player);
-        setIsInQueue(false);
-        return;
-      } else if (playerCheck.inQueue && playerCheck.player) {
-        setCurrentPlayer(playerCheck.player);
-        setIsInQueue(true);
-        return;
-      }
-      
-      // Player not in room, attempt to join
-      const newPlayer: Omit<Player, 'isHost' | 'joinedAt' | 'lastActivity'> = {
-        id: storedPlayerId,
-        username: storedPlayerName.trim(),
-        handCount: 0,
-        status: 'waiting',
-        ready: false
-      };
-
-      const result = roomManager.joinRoom(roomId, newPlayer);
-      if (result.success && result.room) {
-        setRoom(result.room);
+      try {
+        // Get player info from session manager
+        const { default: sessionManager } = await import('@/lib/sessionManager');
+        const playerInfo = await sessionManager.getPlayerInfo();
         
-        if (result.inQueue) {
-          // Player was added to queue
-          setIsInQueue(true);
-          const queuedPlayer = result.room.waitingQueue.find(p => p.id === storedPlayerId);
-          setCurrentPlayer(queuedPlayer || null);
-          
-          // Update stored player ID for this room
-          localStorage.setItem(`player_${roomId}`, storedPlayerId);
-          
+        if (!playerInfo) {
+          // No session found, redirect back to main game page
           toast({
-            title: "Added to queue",
-            description: `Room is full. You are #${result.room.waitingQueue.length} in the waiting queue.`,
-            status: "info",
-            duration: 5000,
-            isClosable: true
-          });
-        } else {
-          // Player joined directly
-          setIsInQueue(false);
-          const joinedPlayer = result.room.players.find(p => p.id === storedPlayerId);
-          setCurrentPlayer(joinedPlayer || null);
-          
-          // Update stored player ID for this room
-          localStorage.setItem(`player_${roomId}`, storedPlayerId);
-          
-          toast({
-            title: "Joined room!",
-            description: `Welcome to ${result.room.name}`,
-            status: "success",
+            title: "Player session missing",
+            description: "Please enter your name from the main game page first",
+            status: "warning",
             duration: 3000,
             isClosable: true
           });
+          router.push('/games/04');
+          return;
         }
-      } else {
+        
+        // Update session with current room
+        await sessionManager.updateCurrentRoom(roomId);
+        
+        // Check if this player is already in the room
+        const playerCheck = await roomManager.isPlayerInRoomWithAPIFallback(roomId, playerInfo.id);
+        if (playerCheck.inRoom && playerCheck.player) {
+          setCurrentPlayer(playerCheck.player);
+          setIsInQueue(false);
+          return;
+        } else if (playerCheck.inQueue && playerCheck.player) {
+          setCurrentPlayer(playerCheck.player);
+          setIsInQueue(true);
+          return;
+        }
+        
+        // Player not in room, attempt to join
+        const newPlayer: Omit<Player, 'isHost' | 'joinedAt' | 'lastActivity'> = {
+          id: playerInfo.id,
+          username: playerInfo.username,
+          handCount: 0,
+          status: 'waiting',
+          ready: false
+        };
+
+        const result = await roomManager.joinRoomWithAPIFallback(roomId, newPlayer);
+        if (result.success && result.room) {
+          setRoom(result.room);
+          
+          if (result.inQueue) {
+            // Player was added to queue
+            setIsInQueue(true);
+            const queuedPlayer = result.room.waitingQueue.find(p => p.id === playerInfo.id);
+            setCurrentPlayer(queuedPlayer || null);
+            
+            toast({
+              title: "Added to queue",
+              description: `Room is full. You are #${result.room.waitingQueue.length} in the waiting queue.`,
+              status: "info",
+              duration: 5000,
+              isClosable: true
+            });
+          } else {
+            // Player joined directly
+            setIsInQueue(false);
+            const joinedPlayer = result.room.players.find(p => p.id === playerInfo.id);
+            setCurrentPlayer(joinedPlayer || null);
+            
+            toast({
+              title: "Joined room!",
+              description: `Welcome to ${result.room.name}`,
+              status: "success",
+              duration: 3000,
+              isClosable: true
+            });
+          }
+        } else {
+          toast({
+            title: "Failed to join room",
+            description: result.error || "Could not join the room",
+            status: "error",
+            duration: 3000,
+            isClosable: true
+          });
+          // Redirect back to main game page
+          router.push('/games/04');
+        }
+      } catch (error) {
+        console.error('Failed to initialize player:', error);
         toast({
-          title: "Failed to join room",
-          description: result.error || "Could not join the room",
+          title: "Session error",
+          description: "Failed to initialize player session",
           status: "error",
           duration: 3000,
           isClosable: true
         });
-        // Redirect back to main game page
         router.push('/games/04');
       }
-    }
-  }, [roomId, currentPlayer, room.players, router, toast]);
+    };
+    
+    initializePlayer();
+  }, [roomId, currentPlayer, router, toast]);
 
   // Periodic room updates and cross-tab synchronization
   useEffect(() => {
@@ -355,6 +368,7 @@ const UnoLikeRoom: React.FC<UnoLikeRoomProps> = ({ roomId, initialRoom, onRoomDe
     return (
       <VStack spacing={6} maxW="1200px" mx="auto">
         <UnoGameplay 
+          roomId={roomId}
           players={room.players} 
           currentPlayer={currentPlayer}
           onEndGame={endGame}

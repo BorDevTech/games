@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Grid,
   Button,
@@ -20,136 +20,95 @@ import {
 } from '@chakra-ui/react';
 import { FaArrowLeft, FaArrowRight } from 'react-icons/fa';
 import { Player } from '@/lib/roomManager';
-
-// UNO Card types
-type CardColor = 'red' | 'yellow' | 'green' | 'blue' | 'wild';
-type CardType = 'number' | 'skip' | 'reverse' | 'draw2' | 'wild' | 'wild_draw4';
-
-interface UnoCard {
-  id: string;
-  color: CardColor;
-  type: CardType;
-  value?: number; // For number cards (0-9)
-}
-
-interface GameState {
-  currentPlayerIndex: number;
-  direction: 1 | -1; // 1 for clockwise, -1 for counterclockwise
-  topCard: UnoCard;
-  deck: UnoCard[];
-  playerHands: { [playerId: string]: UnoCard[] };
-  hasDrawn: boolean;
-  gameEnded: boolean;
-  winner?: string;
-}
+import gameStateManager, { GameState, UnoCard } from '@/lib/gameStateManager';
 
 interface UnoGameplayProps {
+  roomId: string;
   players: Player[];
   currentPlayer: Player;
   onEndGame: () => void;
 }
 
-const UnoGameplay: React.FC<UnoGameplayProps> = ({ players, currentPlayer, onEndGame }) => {
+const UnoGameplay: React.FC<UnoGameplayProps> = ({ roomId, players, currentPlayer, onEndGame }) => {
   const toast = useToast();
   
-  // Filter out AI dealer for game players
+  // Filter out AI dealer for game players - this should be consistent everywhere
   const gamePlayers = players.filter(p => p.id !== 'ai-dealer-bot' && p.status === 'playing');
   
-  // Initialize game state
-  const [gameState, setGameState] = useState<GameState>(() => {
-    const deck = createDeck();
-    const shuffledDeck = shuffleDeck(deck);
-    
-    // Deal initial hands (7 cards each)
-    const playerHands: { [playerId: string]: UnoCard[] } = {};
-    let deckIndex = 0;
-    
-    gamePlayers.forEach(player => {
-      playerHands[player.id] = shuffledDeck.slice(deckIndex, deckIndex + 7);
-      deckIndex += 7;
-    });
-    
-    // Set starting card (skip action cards for simplicity)
-    let topCardIndex = deckIndex;
-    let topCard = shuffledDeck[topCardIndex];
-    while (topCard.type !== 'number') {
-      topCardIndex++;
-      topCard = shuffledDeck[topCardIndex];
+  // Initialize or load game state
+  const [gameState, setGameState] = useState<GameState | null>(() => {
+    const existingState = gameStateManager.getGameState(roomId);
+    if (existingState) {
+      // Ensure the game state player order matches our current game players
+      const currentPlayerIds = gamePlayers.map(p => p.id);
+      if (existingState.playerOrder.length !== currentPlayerIds.length || 
+          !existingState.playerOrder.every(id => currentPlayerIds.includes(id))) {
+        console.log('Player order mismatch detected, recreating game state');
+        return gameStateManager.createGameState(roomId, currentPlayerIds);
+      }
+      return existingState;
     }
     
-    return {
-      currentPlayerIndex: 0,
-      direction: 1,
-      topCard,
-      deck: shuffledDeck.slice(topCardIndex + 1),
-      playerHands,
-      hasDrawn: false,
-      gameEnded: false
-    };
+    // Create new game state if none exists
+    const playerIds = gamePlayers.map(p => p.id);
+    if (playerIds.length >= 2) {
+      return gameStateManager.createGameState(roomId, playerIds);
+    }
+    return null; // Not enough players to start
   });
 
-  // Create a standard UNO deck
-  function createDeck(): UnoCard[] {
-    const cards: UnoCard[] = [];
-    const colors: CardColor[] = ['red', 'yellow', 'green', 'blue'];
-    
-    // Number cards (0-9)
-    colors.forEach(color => {
-      // One 0 card per color
-      cards.push({ id: `${color}-0`, color, type: 'number', value: 0 });
-      
-      // Two of each 1-9 per color
-      for (let i = 1; i <= 9; i++) {
-        cards.push({ id: `${color}-${i}-1`, color, type: 'number', value: i });
-        cards.push({ id: `${color}-${i}-2`, color, type: 'number', value: i });
+  // Periodic sync with other devices
+  useEffect(() => {
+    const syncInterval = setInterval(() => {
+      const syncedState = gameStateManager.getGameState(roomId, true); // Force sync
+      if (syncedState && gameState) {
+        // Check if the state has changed significantly
+        if (syncedState.syncedAt && gameState.syncedAt && syncedState.syncedAt > gameState.syncedAt) {
+          // Additional validation to prevent invalid states
+          const currentPlayerIds = gamePlayers.map(p => p.id);
+          if (syncedState.playerOrder.length === currentPlayerIds.length && 
+              syncedState.playerOrder.every(id => currentPlayerIds.includes(id)) &&
+              syncedState.currentPlayerIndex >= 0 && 
+              syncedState.currentPlayerIndex < syncedState.playerOrder.length) {
+            console.log('Syncing updated game state from API');
+            setGameState(syncedState);
+          } else {
+            console.warn('Received invalid game state from sync, ignoring');
+          }
+        }
       }
-      
-      // Action cards (2 of each per color)
-      cards.push({ id: `${color}-skip-1`, color, type: 'skip' });
-      cards.push({ id: `${color}-skip-2`, color, type: 'skip' });
-      cards.push({ id: `${color}-reverse-1`, color, type: 'reverse' });
-      cards.push({ id: `${color}-reverse-2`, color, type: 'reverse' });
-      cards.push({ id: `${color}-draw2-1`, color, type: 'draw2' });
-      cards.push({ id: `${color}-draw2-2`, color, type: 'draw2' });
-    });
-    
-    // Wild cards
-    for (let i = 1; i <= 4; i++) {
-      cards.push({ id: `wild-${i}`, color: 'wild', type: 'wild' });
-      cards.push({ id: `wild_draw4-${i}`, color: 'wild', type: 'wild_draw4' });
-    }
-    
-    return cards;
-  }
+    }, 3000); // Reduce sync frequency to 3 seconds to avoid conflicts
 
-  // Shuffle deck
-  function shuffleDeck(deck: UnoCard[]): UnoCard[] {
-    const shuffled = [...deck];
-    for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
-    return shuffled;
+    return () => clearInterval(syncInterval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId, gameState?.syncedAt, gamePlayers.length]);
+
+  if (!gameState) {
+    return (
+      <VStack spacing={4}>
+        <Text>Loading game...</Text>
+      </VStack>
+    );
   }
 
   // Check if a card can be played
   function canPlayCard(card: UnoCard, topCard: UnoCard): boolean {
     if (card.color === 'wild') return true;
     if (card.color === topCard.color) return true;
+    if (card.type === topCard.type) return true;
     if (card.type === 'number' && topCard.type === 'number' && card.value === topCard.value) return true;
-    if (card.type === topCard.type && card.type !== 'number') return true;
     return false;
   }
 
-  // Get card color for display
+  // Get card background color
   function getCardColor(card: UnoCard): string {
     switch (card.color) {
       case 'red': return 'red.500';
       case 'yellow': return 'yellow.500';
       case 'green': return 'green.500';
       case 'blue': return 'blue.500';
-      case 'wild': return 'purple.500';
-      default: return 'gray.500';
+      case 'wild': return 'gray.800';
+      default: return 'gray.400';
     }
   }
 
@@ -166,10 +125,24 @@ const UnoGameplay: React.FC<UnoGameplayProps> = ({ players, currentPlayer, onEnd
 
   // Play a card
   function playCard(card: UnoCard) {
-    if (gameState.gameEnded) return;
+    if (!gameState || gameState.gameEnded) return;
     
-    const currentGamePlayer = gamePlayers[gameState.currentPlayerIndex];
-    if (currentGamePlayer.id !== currentPlayer.id) {
+    // Force fresh state check before making any moves
+    const freshState = gameStateManager.getGameState(roomId, true);
+    if (!freshState || freshState.gameEnded) {
+      toast({
+        title: "Game state error",
+        description: "Unable to get current game state",
+        status: "error",
+        duration: 2000,
+        isClosable: true
+      });
+      return;
+    }
+    
+    // Use fresh state for validation
+    const currentGamePlayer = gamePlayers[freshState.currentPlayerIndex];
+    if (!currentGamePlayer || currentGamePlayer.id !== currentPlayer.id) {
       toast({
         title: "Not your turn",
         description: "Wait for your turn to play",
@@ -180,7 +153,7 @@ const UnoGameplay: React.FC<UnoGameplayProps> = ({ players, currentPlayer, onEnd
       return;
     }
 
-    if (!canPlayCard(card, gameState.topCard)) {
+    if (!canPlayCard(card, freshState.topCard)) {
       toast({
         title: "Invalid move",
         description: "That card cannot be played",
@@ -190,20 +163,40 @@ const UnoGameplay: React.FC<UnoGameplayProps> = ({ players, currentPlayer, onEnd
       });
       return;
     }
+    
+    // Verify player has this card in their hand
+    const playerHand = freshState.playerHands[currentPlayer.id] || [];
+    if (!playerHand.find(c => c.id === card.id)) {
+      toast({
+        title: "Invalid card",
+        description: "You don't have this card in your hand",
+        status: "error",
+        duration: 2000,
+        isClosable: true
+      });
+      return;
+    }
 
     // Remove card from player's hand
-    const newPlayerHands = { ...gameState.playerHands };
+    const newPlayerHands = { ...freshState.playerHands };
     newPlayerHands[currentPlayer.id] = newPlayerHands[currentPlayer.id].filter(c => c.id !== card.id);
     
     // Check if player won
     if (newPlayerHands[currentPlayer.id].length === 0) {
-      setGameState(prev => ({
-        ...prev,
+      const updatedState = gameStateManager.updateGameState(roomId, {
         gameEnded: true,
         winner: currentPlayer.id,
         playerHands: newPlayerHands,
         topCard: card
-      }));
+      }, {
+        type: 'play_card',
+        playerId: currentPlayer.id,
+        data: { cardId: card.id, gameWon: true }
+      });
+      
+      if (updatedState) {
+        setGameState(updatedState);
+      }
       
       toast({
         title: "Game Over!",
@@ -215,19 +208,19 @@ const UnoGameplay: React.FC<UnoGameplayProps> = ({ players, currentPlayer, onEnd
       return;
     }
 
-    let newDirection = gameState.direction;
-    let nextPlayerIndex = gameState.currentPlayerIndex;
+    let newDirection = freshState.direction;
+    let nextPlayerIndex = freshState.currentPlayerIndex;
 
     // Handle action cards
     if (card.type === 'reverse') {
-      newDirection = gameState.direction * -1 as 1 | -1;
+      newDirection = freshState.direction * -1 as 1 | -1;
     } else if (card.type === 'skip') {
       // Skip next player
       nextPlayerIndex = (nextPlayerIndex + newDirection + gamePlayers.length) % gamePlayers.length;
     } else if (card.type === 'draw2') {
       // Next player draws 2 and is skipped
       const nextPlayerId = gamePlayers[(nextPlayerIndex + newDirection + gamePlayers.length) % gamePlayers.length].id;
-      const drawnCards = gameState.deck.slice(0, 2);
+      const drawnCards = freshState.deck.slice(0, 2);
       newPlayerHands[nextPlayerId] = [...newPlayerHands[nextPlayerId], ...drawnCards];
       nextPlayerIndex = (nextPlayerIndex + newDirection + gamePlayers.length) % gamePlayers.length;
     }
@@ -235,22 +228,42 @@ const UnoGameplay: React.FC<UnoGameplayProps> = ({ players, currentPlayer, onEnd
     // Move to next player
     nextPlayerIndex = (nextPlayerIndex + newDirection + gamePlayers.length) % gamePlayers.length;
 
-    setGameState(prev => ({
-      ...prev,
+    const updatedState = gameStateManager.updateGameState(roomId, {
       currentPlayerIndex: nextPlayerIndex,
       direction: newDirection,
       topCard: card,
       playerHands: newPlayerHands,
       hasDrawn: false
-    }));
+    }, {
+      type: 'play_card',
+      playerId: currentPlayer.id,
+      data: { cardId: card.id, cardType: card.type }
+    });
+    
+    if (updatedState) {
+      setGameState(updatedState);
+    }
   }
 
   // Draw a card
   function drawCard() {
-    if (gameState.gameEnded) return;
+    if (!gameState || gameState.gameEnded) return;
     
-    const currentGamePlayer = gamePlayers[gameState.currentPlayerIndex];
-    if (currentGamePlayer.id !== currentPlayer.id) {
+    // Force fresh state check before making any moves
+    const freshState = gameStateManager.getGameState(roomId, true);
+    if (!freshState || freshState.gameEnded) {
+      toast({
+        title: "Game state error",
+        description: "Unable to get current game state",
+        status: "error",
+        duration: 2000,
+        isClosable: true
+      });
+      return;
+    }
+    
+    const currentGamePlayer = gamePlayers[freshState.currentPlayerIndex];
+    if (!currentGamePlayer || currentGamePlayer.id !== currentPlayer.id) {
       toast({
         title: "Not your turn",
         description: "Wait for your turn to draw",
@@ -261,7 +274,7 @@ const UnoGameplay: React.FC<UnoGameplayProps> = ({ players, currentPlayer, onEnd
       return;
     }
 
-    if (gameState.hasDrawn) {
+    if (freshState.hasDrawn) {
       toast({
         title: "Already drawn",
         description: "You can only draw one card per turn",
@@ -272,7 +285,7 @@ const UnoGameplay: React.FC<UnoGameplayProps> = ({ players, currentPlayer, onEnd
       return;
     }
 
-    if (gameState.deck.length === 0) {
+    if (freshState.deck.length === 0) {
       toast({
         title: "Deck empty",
         description: "No more cards to draw",
@@ -283,26 +296,55 @@ const UnoGameplay: React.FC<UnoGameplayProps> = ({ players, currentPlayer, onEnd
       return;
     }
 
-    const drawnCard = gameState.deck[0];
-    const newPlayerHands = { ...gameState.playerHands };
+    const drawnCard = freshState.deck[0];
+    const newPlayerHands = { ...freshState.playerHands };
     newPlayerHands[currentPlayer.id] = [...newPlayerHands[currentPlayer.id], drawnCard];
 
-    setGameState(prev => ({
-      ...prev,
-      deck: prev.deck.slice(1),
+    const updatedState = gameStateManager.updateGameState(roomId, {
+      deck: freshState.deck.slice(1),
       playerHands: newPlayerHands,
       hasDrawn: true
-    }));
+    }, {
+      type: 'draw_card',
+      playerId: currentPlayer.id,
+      data: { cardId: drawnCard.id }
+    });
+    
+    if (updatedState) {
+      setGameState(updatedState);
+    }
   }
 
   // Pass turn
   function passTurn() {
-    if (gameState.gameEnded) return;
+    if (!gameState || gameState.gameEnded) return;
     
-    const currentGamePlayer = gamePlayers[gameState.currentPlayerIndex];
-    if (currentGamePlayer.id !== currentPlayer.id) return;
+    // Force fresh state check before making any moves
+    const freshState = gameStateManager.getGameState(roomId, true);
+    if (!freshState || freshState.gameEnded) {
+      toast({
+        title: "Game state error",
+        description: "Unable to get current game state",
+        status: "error",
+        duration: 2000,
+        isClosable: true
+      });
+      return;
+    }
     
-    if (!gameState.hasDrawn) {
+    const currentGamePlayer = gamePlayers[freshState.currentPlayerIndex];
+    if (!currentGamePlayer || currentGamePlayer.id !== currentPlayer.id) {
+      toast({
+        title: "Not your turn",
+        description: "It's not your turn to pass",
+        status: "warning",
+        duration: 2000,
+        isClosable: true
+      });
+      return;
+    }
+    
+    if (!freshState.hasDrawn) {
       toast({
         title: "Must draw first",
         description: "You must draw a card before passing",
@@ -313,13 +355,19 @@ const UnoGameplay: React.FC<UnoGameplayProps> = ({ players, currentPlayer, onEnd
       return;
     }
 
-    const nextPlayerIndex = (gameState.currentPlayerIndex + gameState.direction + gamePlayers.length) % gamePlayers.length;
+    const nextPlayerIndex = (freshState.currentPlayerIndex + freshState.direction + gamePlayers.length) % gamePlayers.length;
     
-    setGameState(prev => ({
-      ...prev,
+    const updatedState = gameStateManager.updateGameState(roomId, {
       currentPlayerIndex: nextPlayerIndex,
       hasDrawn: false
-    }));
+    }, {
+      type: 'pass_turn',
+      playerId: currentPlayer.id
+    });
+    
+    if (updatedState) {
+      setGameState(updatedState);
+    }
   }
 
   const currentGamePlayer = gamePlayers[gameState.currentPlayerIndex];
