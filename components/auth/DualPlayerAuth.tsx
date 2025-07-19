@@ -187,12 +187,14 @@ const DualPlayerAuth: React.FC<DualPlayerAuthProps> = ({
 
     // Create new player
     const colors = ['#805AD5', '#3182CE', '#38A169', '#D69E2E', '#E53E3E', '#DD6B20'];
+    const randomColor = colors[Math.floor(Math.random() * colors.length)];
+    const trimmedEmail = email.trim();
     const newPlayer: Player = {
       id: Date.now().toString() + '-' + activePlayer,
       username: username.trim(),
-      email: email.trim() || undefined,
+      ...(trimmedEmail && { email: trimmedEmail }),
       isOnline: true,
-      backgroundColor: colors[Math.floor(Math.random() * colors.length)],
+      backgroundColor: randomColor || '#805AD5',
       gamesPlayed: 0,
       gamesWon: 0,
       createdAt: new Date()

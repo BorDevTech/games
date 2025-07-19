@@ -158,10 +158,11 @@ const PlayerAuth: React.FC<PlayerAuthProps> = ({
     }
 
     // Create new player
+    const trimmedEmail = email.trim();
     const newPlayer: Player = {
       id: Date.now().toString(),
       username: username.trim(),
-      email: email.trim() || undefined,
+      ...(trimmedEmail && { email: trimmedEmail }),
       isOnline: true,
       backgroundColor: '#805AD5', // Default purple
       gamesPlayed: 0,

@@ -40,33 +40,7 @@ import {
   FaShare,
   FaDownload
 } from 'react-icons/fa';
-
-// TypeScript interfaces for type safety
-interface GameCard {
-  id: number;
-  title: string;
-  genre: string;
-  rating: number;
-  players: string;
-  image: string;
-  price: string;
-  description: string;
-}
-
-interface FeatureCard {
-  icon: React.ReactElement;
-  title: string;
-  description: string;
-}
-
-interface NewsItem {
-  id: number;
-  title: string;
-  excerpt: string;
-  date: string;
-  author: string;
-  image: string;
-}
+import type { GameCard, FeatureCard, NewsItem } from '@/types';
 
 const GameHub: React.FC = () => {
   const { colorMode, toggleColorMode } = useColorMode();
@@ -402,9 +376,11 @@ const GameHub: React.FC = () => {
     if (results.length > 0) {
       // Navigate to first result if it's implemented
       const game = results[0];
-      const routeId = getGameRouteId(game.id);
-      if (routeId) {
-        window.location.href = `/games/${routeId}`;
+      if (game) {
+        const routeId = getGameRouteId(game.id);
+        if (routeId) {
+          window.location.href = `/games/${routeId}`;
+        }
       }
     } else {
       // Show game creation form

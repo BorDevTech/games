@@ -216,7 +216,7 @@ class WebSocketManager {
       }
     }
 
-    player.roomId = undefined;
+    delete player.roomId;
     console.log(`Player ${player.username} left room ${roomId}`);
   }
 
