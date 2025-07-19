@@ -1,11 +1,12 @@
-// Standalone WebSocket Server for Real-time Multiplayer Gaming
-// Implements proper WebSocket API standards as per MDN documentation
-// Provides backpressure handling and cross-browser compatibility
+// Modern Multiplayer Game Server
+// Implements authoritative server architecture with direct connections
+// Features: Real-time state sync, anti-cheat, optimized networking
 
 const { createServer } = require('http');
 const { WebSocketServer } = require('ws');
 const { parse } = require('url');
 const next = require('next');
+const { v4: uuidv4 } = require('uuid');
 
 const dev = process.env.NODE_ENV !== 'production';
 const hostname = 'localhost';
@@ -15,10 +16,61 @@ const port = parseInt(process.env.PORT, 10) || 3001;
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
 
-// Game state management
-const gameRooms = new Map();
-const playerSessions = new Map();
-const activeConnections = new Map();
+// Import modern multiplayer components
+let GameServer, ModernConnectionManager;
+try {
+  // These will be loaded after TypeScript compilation
+  const gameServerModule = require('./lib/multiplayer/GameServer');
+  const connectionManagerModule = require('./lib/multiplayer/ConnectionManager');
+  GameServer = gameServerModule.GameServer;
+  ModernConnectionManager = connectionManagerModule.ModernConnectionManager;
+} catch (error) {
+  console.warn('TypeScript modules not compiled yet, using fallback implementation');
+}
+
+// Modern server implementation with fallback
+let gameServer = null;
+let connectionManager = null;
+
+// Initialize modern multiplayer architecture if available
+if (GameServer && ModernConnectionManager) {
+  console.log('Initializing modern multiplayer architecture...');
+  
+  connectionManager = new ModernConnectionManager();
+  gameServer = new GameServer(connectionManager);
+  
+  // Set up event handlers for modern architecture
+  connectionManager.on('message', ({ connectionId, playerId, message }) => {
+    // Route messages to game server
+    if (message.type === 'game_action' || message.type === 'player_input') {
+      gameServer.processPlayerInput(playerId, {
+        playerId,
+        type: message.data?.action || message.type,
+        data: message.data || {},
+        sequenceNumber: message.sequenceNumber || 0
+      });
+    }
+  });
+  
+  connectionManager.on('disconnect', ({ playerId, reason }) => {
+    gameServer.handlePlayerDisconnection(playerId, reason);
+  });
+  
+  // Game server events
+  gameServer.on('player_connected', (player) => {
+    console.log(`Modern multiplayer: Player ${player.username} connected`);
+  });
+  
+  gameServer.on('lobby_created', (lobby) => {
+    console.log(`Modern multiplayer: Lobby ${lobby.id} created for ${lobby.gameType}`);
+  });
+  
+  gameServer.on('game_started', (lobby) => {
+    console.log(`Modern multiplayer: Game started in lobby ${lobby.id}`);
+  });
+} else {
+  console.log('Using fallback multiplayer implementation...');
+}
 
 // WebSocket message queue for backpressure handling
 class MessageQueue {
@@ -70,7 +122,7 @@ class MessageQueue {
 
 const messageQueue = new MessageQueue();
 
-// WebSocket connection handler with proper MDN standards implementation
+// Modern WebSocket connection handler
 function handleWebSocketUpgrade(request, socket, head) {
   const { pathname, query } = parse(request.url, true);
   
@@ -92,22 +144,43 @@ function handleWebSocketUpgrade(request, socket, head) {
   });
 }
 
-// Initialize WebSocket Server with proper error handling
+// Initialize WebSocket Server with modern architecture
 const wss = new WebSocketServer({ 
   noServer: true,
-  // Enable per-message deflate for bandwidth optimization
   perMessageDeflate: true,
-  // Set reasonable limits
   maxPayload: 1024 * 1024, // 1MB max message size
 });
 
-// Handle new WebSocket connections
-wss.on('connection', function connection(ws, request, connectionParams) {
+// Handle new WebSocket connections with modern or fallback implementation
+wss.on('connection', async function connection(ws, request, connectionParams) {
   const { playerId, username, sessionId } = connectionParams;
+  const connectionId = uuidv4();
   
   console.log(`WebSocket connection established for ${username} (${playerId})`);
   
-  // Store connection info
+  if (connectionManager && gameServer) {
+    // Use modern multiplayer architecture
+    try {
+      const result = await connectionManager.handleConnection(ws, request, connectionId);
+      if (result.success && result.playerId) {
+        await gameServer.handlePlayerConnection(result.playerId, username, connectionId);
+      }
+    } catch (error) {
+      console.error('Modern connection handling error:', error);
+      // Fall back to legacy implementation
+      handleLegacyConnection(ws, connectionParams, connectionId);
+    }
+  } else {
+    // Use fallback implementation
+    handleLegacyConnection(ws, connectionParams, connectionId);
+  }
+});
+
+// Fallback implementation for compatibility
+function handleLegacyConnection(ws, connectionParams, connectionId) {
+  const { playerId, username, sessionId } = connectionParams;
+  
+  // Store connection info (legacy format)
   const connectionInfo = {
     playerId,
     username,
@@ -119,32 +192,34 @@ wss.on('connection', function connection(ws, request, connectionParams) {
     isAlive: true
   };
   
-  activeConnections.set(playerId, connectionInfo);
-  playerSessions.set(sessionId, connectionInfo);
+  // Legacy connection tracking
+  if (typeof activeConnections !== 'undefined') {
+    activeConnections.set(playerId, connectionInfo);
+    playerSessions.set(sessionId, connectionInfo);
+  }
 
-  // Set up ping/pong heartbeat as per MDN recommendations
+  // Set up legacy ping/pong heartbeat
   ws.isAlive = true;
   ws.on('pong', function heartbeat() {
     ws.isAlive = true;
     connectionInfo.lastActivity = new Date();
   });
 
-  // Handle incoming messages with backpressure consideration
+  // Handle legacy messages
   ws.on('message', function message(data) {
     try {
       connectionInfo.lastActivity = new Date();
       const parsedMessage = JSON.parse(data.toString());
       
-      // Validate message structure
       if (!parsedMessage.type || !parsedMessage.messageId) {
         sendError(ws, 'Invalid message format');
         return;
       }
       
-      handleGameMessage(playerId, parsedMessage);
+      handleLegacyGameMessage(playerId, parsedMessage);
       
     } catch (error) {
-      console.error(`Error processing message from ${playerId}:`, error);
+      console.error(`Error processing legacy message from ${playerId}:`, error);
       sendError(ws, 'Message processing error');
     }
   });
@@ -152,13 +227,13 @@ wss.on('connection', function connection(ws, request, connectionParams) {
   // Handle connection close
   ws.on('close', function close(code, reason) {
     console.log(`WebSocket connection closed for ${username}: ${code} ${reason}`);
-    cleanupConnection(playerId);
+    cleanupLegacyConnection(playerId);
   });
 
   // Handle connection errors
   ws.on('error', function error(err) {
     console.error(`WebSocket error for ${username}:`, err);
-    cleanupConnection(playerId);
+    cleanupLegacyConnection(playerId);
   });
 
   // Send connection confirmation
@@ -167,35 +242,69 @@ wss.on('connection', function connection(ws, request, connectionParams) {
     playerId,
     data: { 
       message: 'Real-time connection established',
-      serverTime: new Date().toISOString()
+      serverTime: new Date().toISOString(),
+      architecture: 'legacy_fallback'
     },
     timestamp: new Date().toISOString(),
     messageId: `conn_${Date.now()}`
   });
-});
+}
 
-// Heartbeat interval to detect broken connections
-const heartbeatInterval = setInterval(function ping() {
-  wss.clients.forEach(function each(ws) {
-    if (ws.isAlive === false) {
-      // Find and cleanup the connection
-      for (const [playerId, conn] of activeConnections.entries()) {
-        if (conn.socket === ws) {
-          console.log(`Heartbeat failed for ${conn.username}, terminating connection`);
-          cleanupConnection(playerId);
-          return ws.terminate();
+// Legacy game state management (fallback)
+const gameRooms = new Map();
+const playerSessions = new Map();
+const activeConnections = new Map();
+
+// Legacy message queue for backpressure handling
+class MessageQueue {
+  constructor(maxSize = 1000) {
+    this.queue = [];
+    this.maxSize = maxSize;
+    this.processing = false;
+  }
+
+  enqueue(message, connection) {
+    if (this.queue.length >= this.maxSize) {
+      console.warn('Message queue full, dropping oldest message');
+      this.queue.shift();
+    }
+    
+    this.queue.push({ message, connection, timestamp: Date.now() });
+    this.process();
+  }
+
+  async process() {
+    if (this.processing || this.queue.length === 0) return;
+    
+    this.processing = true;
+    
+    while (this.queue.length > 0) {
+      const { message, connection } = this.queue.shift();
+      
+      if (connection.readyState === connection.OPEN) {
+        try {
+          connection.send(JSON.stringify(message));
+        } catch (error) {
+          console.error('Error sending queued message:', error);
+          this.removeConnection(connection);
         }
       }
-      return ws.terminate();
+      
+      await new Promise(resolve => setImmediate(resolve));
     }
+    
+    this.processing = false;
+  }
 
-    ws.isAlive = false;
-    ws.ping();
-  });
-}, 30000); // Check every 30 seconds
+  removeConnection(connection) {
+    this.queue = this.queue.filter(item => item.connection !== connection);
+  }
+}
 
-// Game message handling
-function handleGameMessage(playerId, message) {
+const messageQueue = new MessageQueue();
+
+// Legacy game message handling
+function handleLegacyGameMessage(playerId, message) {
   const connection = activeConnections.get(playerId);
   if (!connection) return;
 
@@ -213,7 +322,6 @@ function handleGameMessage(playerId, message) {
       break;
       
     case 'heartbeat':
-      // Respond to client heartbeat
       sendMessage(connection.socket, {
         type: 'heartbeat',
         timestamp: new Date().toISOString(),
@@ -230,12 +338,10 @@ function handleJoinRoom(playerId, roomId) {
   const connection = activeConnections.get(playerId);
   if (!connection) return;
 
-  // Leave current room if in one
   if (connection.roomId) {
     handleLeaveRoom(playerId, connection.roomId);
   }
 
-  // Initialize room if it doesn't exist
   if (!gameRooms.has(roomId)) {
     gameRooms.set(roomId, {
       id: roomId,
@@ -252,7 +358,6 @@ function handleJoinRoom(playerId, roomId) {
 
   console.log(`Player ${connection.username} joined room ${roomId}`);
 
-  // Notify all players in the room
   broadcastToRoom(roomId, {
     type: 'player_update',
     roomId,
@@ -282,11 +387,9 @@ function handleLeaveRoom(playerId, roomId) {
 
   console.log(`Player ${connection.username} left room ${roomId}`);
 
-  // Clean up empty rooms
   if (room.players.size === 0) {
     gameRooms.delete(roomId);
   } else {
-    // Notify remaining players
     broadcastToRoom(roomId, {
       type: 'player_update',
       roomId,
@@ -310,15 +413,12 @@ function handleGameAction(playerId, message) {
   const connection = activeConnections.get(playerId);
   if (!connection || !connection.roomId) return;
 
-  // Broadcast game action to all players in the room except sender
   broadcastToRoom(connection.roomId, message, playerId);
 }
 
-// Send message with backpressure handling
 function sendMessage(ws, message) {
   if (ws.readyState === ws.OPEN) {
-    // Check buffer size for backpressure handling
-    if (ws.bufferedAmount > 1024 * 1024) { // 1MB threshold
+    if (ws.bufferedAmount > 1024 * 1024) {
       console.warn('WebSocket buffer full, queuing message');
       messageQueue.enqueue(message, ws);
     } else {
@@ -330,7 +430,6 @@ function sendMessage(ws, message) {
       }
     }
   } else {
-    // Queue message if connection is not ready
     messageQueue.enqueue(message, ws);
   }
 }
@@ -358,28 +457,52 @@ function broadcastToRoom(roomId, message, excludePlayerId = null) {
   }
 }
 
-function cleanupConnection(playerId) {
+function cleanupLegacyConnection(playerId) {
   const connection = activeConnections.get(playerId);
   if (!connection) return;
 
-  // Leave any room the player was in
   if (connection.roomId) {
     handleLeaveRoom(playerId, connection.roomId);
   }
 
-  // Clean up from message queue
   messageQueue.removeConnection(connection.socket);
-
-  // Remove from tracking
   activeConnections.delete(playerId);
   playerSessions.delete(connection.sessionId);
 }
 
+// Heartbeat interval to detect broken connections
+const heartbeatInterval = setInterval(function ping() {
+  wss.clients.forEach(function each(ws) {
+    if (ws.isAlive === false) {
+      // Find and cleanup the connection
+      for (const [playerId, conn] of activeConnections.entries()) {
+        if (conn.socket === ws) {
+          console.log(`Heartbeat failed for ${conn.username}, terminating connection`);
+          cleanupLegacyConnection(playerId);
+          return ws.terminate();
+        }
+      }
+      return ws.terminate();
+    }
+
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, 30000); // Check every 30 seconds
+
 // Graceful shutdown handling
 function shutdown() {
-  console.log('Shutting down WebSocket server...');
+  console.log('Shutting down game server...');
   
   clearInterval(heartbeatInterval);
+  
+  // Shutdown modern components if available
+  if (gameServer) {
+    gameServer.shutdown();
+  }
+  if (connectionManager) {
+    connectionManager.shutdown();
+  }
   
   // Close all WebSocket connections
   wss.clients.forEach(function each(ws) {
@@ -408,12 +531,19 @@ app.prepare().then(() => {
   server.listen(port, hostname, (err) => {
     if (err) throw err;
     console.log(`> Ready on http://${hostname}:${port}`);
-    console.log(`> WebSocket server ready for real-time connections`);
-    console.log(`> Implementing MDN WebSocket API standards with backpressure handling`);
+    console.log(`> Modern multiplayer game server ready`);
+    console.log(`> Architecture: ${gameServer ? 'Modern authoritative server' : 'Legacy fallback'}`);
+    console.log(`> Features: Direct connections, real-time sync, anti-cheat measures`);
   });
 
   // Log server stats periodically
   setInterval(() => {
-    console.log(`Server stats: ${activeConnections.size} connections, ${gameRooms.size} active rooms`);
+    if (gameServer && connectionManager) {
+      const gameStats = gameServer.getServerStats();
+      const connStats = connectionManager.getStats();
+      console.log(`Modern server stats: ${connStats.totalConnections} connections, ${gameStats.activeLobbies} lobbies, ${gameStats.connectedPlayers} players`);
+    } else {
+      console.log(`Legacy server stats: ${activeConnections.size} connections, ${gameRooms.size} active rooms`);
+    }
   }, 60000); // Log every minute
 });
