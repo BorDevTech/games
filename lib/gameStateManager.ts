@@ -71,16 +71,22 @@ class GameStateManager {
     // Set starting card (skip action cards for simplicity)
     let topCardIndex = deckIndex;
     let topCard = shuffledDeck[topCardIndex];
-    while (topCard.type !== 'number' && topCardIndex < shuffledDeck.length - 1) {
+    while (topCard && topCard.type !== 'number' && topCardIndex < shuffledDeck.length - 1) {
       topCardIndex++;
       topCard = shuffledDeck[topCardIndex];
+    }
+    
+    // Fallback to first card if no number card found
+    if (!topCard) {
+      topCard = shuffledDeck[0] || this.createDeck()[0];
+      topCardIndex = 0;
     }
     
     const gameState: GameState = {
       roomId,
       currentPlayerIndex: 0,
       direction: 1,
-      topCard,
+      topCard: topCard!,
       deck: shuffledDeck.slice(topCardIndex + 1),
       playerHands,
       playerOrder: [...playerIds],
@@ -122,10 +128,12 @@ class GameStateManager {
     const updatedState: GameState = {
       ...currentState,
       ...updates,
-      lastAction: action ? {
-        ...action,
-        timestamp: new Date()
-      } : currentState.lastAction,
+      ...(action && {
+        lastAction: {
+          ...action,
+          timestamp: new Date()
+        }
+      }),
       syncedAt: new Date()
     };
     
@@ -392,7 +400,12 @@ class GameStateManager {
     const shuffled = [...deck];
     for (let i = shuffled.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      const temp = shuffled[i];
+      const swapCard = shuffled[j];
+      if (temp && swapCard) {
+        shuffled[i] = swapCard;
+        shuffled[j] = temp;
+      }
     }
     return shuffled;
   }

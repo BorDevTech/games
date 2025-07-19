@@ -76,7 +76,8 @@ const TicTacToe: React.FC = () => {
 
     for (const combination of winningCombinations) {
       const [a, b, c] = combination;
-      if (gameBoard[a] && gameBoard[a] === gameBoard[b] && gameBoard[a] === gameBoard[c]) {
+      if (a !== undefined && b !== undefined && c !== undefined && 
+          gameBoard[a] && gameBoard[a] === gameBoard[b] && gameBoard[a] === gameBoard[c]) {
         return gameBoard[a] as Player;
       }
     }
@@ -118,7 +119,9 @@ const TicTacToe: React.FC = () => {
     if (blockMove !== null) return blockMove;
 
     // Random move
-    return availableMoves[Math.floor(Math.random() * availableMoves.length)];
+    const randomIndex = Math.floor(Math.random() * availableMoves.length);
+    const randomMove = availableMoves[randomIndex];
+    return randomMove !== undefined ? randomMove : 0;
   }, []);
 
   // Update player statistics
@@ -127,9 +130,12 @@ const TicTacToe: React.FC = () => {
     const playerIndex = players.findIndex((p: StoredPlayer) => p.username === username);
     
     if (playerIndex >= 0) {
-      players[playerIndex].gamesPlayed += 1;
-      if (gameResult === 'win') {
-        players[playerIndex].gamesWon += 1;
+      const player = players[playerIndex];
+      if (player) {
+        player.gamesPlayed += 1;
+        if (gameResult === 'win') {
+          player.gamesWon += 1;
+        }
       }
       localStorage.setItem('players', JSON.stringify(players));
       
@@ -240,6 +246,8 @@ const TicTacToe: React.FC = () => {
 
       return () => clearTimeout(timer);
     }
+    // Return void for TypeScript
+    return;
   }, [currentPlayer, gameState, gameMode, board, makeBotMove, saveGameResult]);
 
   // Start new game

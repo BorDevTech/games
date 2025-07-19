@@ -179,10 +179,14 @@ const UnoGameplay: React.FC<UnoGameplayProps> = ({ roomId, players, currentPlaye
 
     // Remove card from player's hand
     const newPlayerHands = { ...freshState.playerHands };
-    newPlayerHands[currentPlayer.id] = newPlayerHands[currentPlayer.id].filter(c => c.id !== card.id);
+    const currentPlayerHand = newPlayerHands[currentPlayer.id];
+    if (currentPlayerHand) {
+      newPlayerHands[currentPlayer.id] = currentPlayerHand.filter(c => c.id !== card.id);
+    }
     
     // Check if player won
-    if (newPlayerHands[currentPlayer.id].length === 0) {
+    const updatedPlayerHand = newPlayerHands[currentPlayer.id];
+    if (updatedPlayerHand && updatedPlayerHand.length === 0) {
       const updatedState = gameStateManager.updateGameState(roomId, {
         gameEnded: true,
         winner: currentPlayer.id,
@@ -219,10 +223,17 @@ const UnoGameplay: React.FC<UnoGameplayProps> = ({ roomId, players, currentPlaye
       nextPlayerIndex = (nextPlayerIndex + newDirection + gamePlayers.length) % gamePlayers.length;
     } else if (card.type === 'draw2') {
       // Next player draws 2 and is skipped
-      const nextPlayerId = gamePlayers[(nextPlayerIndex + newDirection + gamePlayers.length) % gamePlayers.length].id;
-      const drawnCards = freshState.deck.slice(0, 2);
-      newPlayerHands[nextPlayerId] = [...newPlayerHands[nextPlayerId], ...drawnCards];
-      nextPlayerIndex = (nextPlayerIndex + newDirection + gamePlayers.length) % gamePlayers.length;
+      const nextPlayerIndex2 = (nextPlayerIndex + newDirection + gamePlayers.length) % gamePlayers.length;
+      const nextPlayer = gamePlayers[nextPlayerIndex2];
+      if (nextPlayer) {
+        const nextPlayerId = nextPlayer.id;
+        const drawnCards = freshState.deck.slice(0, 2);
+        const nextPlayerHand = newPlayerHands[nextPlayerId];
+        if (nextPlayerHand) {
+          newPlayerHands[nextPlayerId] = [...nextPlayerHand, ...drawnCards];
+        }
+        nextPlayerIndex = (nextPlayerIndex + newDirection + gamePlayers.length) % gamePlayers.length;
+      }
     }
 
     // Move to next player
@@ -298,7 +309,10 @@ const UnoGameplay: React.FC<UnoGameplayProps> = ({ roomId, players, currentPlaye
 
     const drawnCard = freshState.deck[0];
     const newPlayerHands = { ...freshState.playerHands };
-    newPlayerHands[currentPlayer.id] = [...newPlayerHands[currentPlayer.id], drawnCard];
+    const currentPlayerHand = newPlayerHands[currentPlayer.id];
+    if (currentPlayerHand && drawnCard) {
+      newPlayerHands[currentPlayer.id] = [...currentPlayerHand, drawnCard];
+    }
 
     const updatedState = gameStateManager.updateGameState(roomId, {
       deck: freshState.deck.slice(1),
@@ -307,7 +321,7 @@ const UnoGameplay: React.FC<UnoGameplayProps> = ({ roomId, players, currentPlaye
     }, {
       type: 'draw_card',
       playerId: currentPlayer.id,
-      data: { cardId: drawnCard.id }
+      data: { cardId: drawnCard?.id || '' }
     });
     
     if (updatedState) {

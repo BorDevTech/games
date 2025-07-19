@@ -753,12 +753,12 @@ class RoomManager {
       }),
       createdAt: typeof roomData.createdAt === 'string' ? new Date(roomData.createdAt) : roomData.createdAt,
       lastActivity: typeof roomData.lastActivity === 'string' ? new Date(roomData.lastActivity) : roomData.lastActivity,
-      gameStartedAt: roomData.gameStartedAt ? 
-        (typeof roomData.gameStartedAt === 'string' ? new Date(roomData.gameStartedAt) : roomData.gameStartedAt) : 
-        undefined,
-      gameEndedAt: roomData.gameEndedAt ? 
-        (typeof roomData.gameEndedAt === 'string' ? new Date(roomData.gameEndedAt) : roomData.gameEndedAt) : 
-        undefined
+      ...(roomData.gameStartedAt && {
+        gameStartedAt: typeof roomData.gameStartedAt === 'string' ? new Date(roomData.gameStartedAt) : roomData.gameStartedAt
+      }),
+      ...(roomData.gameEndedAt && {
+        gameEndedAt: typeof roomData.gameEndedAt === 'string' ? new Date(roomData.gameEndedAt) : roomData.gameEndedAt
+      })
     };
     
     this.rooms.set(room.id, room);
@@ -811,8 +811,9 @@ class RoomManager {
 
   // Serialize room for real-time broadcasting
   private serializeRoom(room: Room): SerializedRoom {
+    const { gameStartedAt, gameEndedAt, ...baseRoom } = room;
     return {
-      ...room,
+      ...baseRoom,
       players: room.players.map((player: Player): SerializedPlayer => ({
         ...player,
         joinedAt: player.joinedAt.toISOString(),
@@ -825,8 +826,8 @@ class RoomManager {
       })),
       createdAt: room.createdAt.toISOString(),
       lastActivity: room.lastActivity.toISOString(),
-      gameStartedAt: room.gameStartedAt?.toISOString(),
-      gameEndedAt: room.gameEndedAt?.toISOString()
+      ...(gameStartedAt && { gameStartedAt: gameStartedAt.toISOString() }),
+      ...(gameEndedAt && { gameEndedAt: gameEndedAt.toISOString() })
     };
   }
 
@@ -934,12 +935,13 @@ class RoomManager {
         const roomsArray: [string, SerializedRoom][] = JSON.parse(stored);
         this.rooms = new Map(roomsArray.map(([id, room]) => {
           // Convert date strings back to Date objects
+          const { gameStartedAt, gameEndedAt, ...baseRoom } = room;
           const convertedRoom: Room = {
-            ...room,
+            ...baseRoom,
             createdAt: new Date(room.createdAt),
             lastActivity: new Date(room.lastActivity),
-            gameStartedAt: room.gameStartedAt ? new Date(room.gameStartedAt) : undefined,
-            gameEndedAt: room.gameEndedAt ? new Date(room.gameEndedAt) : undefined,
+            ...(gameStartedAt && { gameStartedAt: new Date(gameStartedAt) }),
+            ...(gameEndedAt && { gameEndedAt: new Date(gameEndedAt) }),
             players: room.players.map((player: SerializedPlayer): Player => ({
               ...player,
               joinedAt: new Date(player.joinedAt),

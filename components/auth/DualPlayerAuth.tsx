@@ -95,7 +95,7 @@ const DualPlayerAuth: React.FC<DualPlayerAuthProps> = ({
   }, [gameMode, onPlayer1Change, onPlayer2Change]);
 
   // Save player data
-  const savePlayer = (player: Player, playerNum: 1 | 2) => {
+  const savePlayer = async (player: Player, playerNum: 1 | 2) => {
     const players = JSON.parse(localStorage.getItem('players') || '[]');
     const existingIndex = players.findIndex((p: Player) => p.id === player.id);
     
@@ -108,6 +108,14 @@ const DualPlayerAuth: React.FC<DualPlayerAuthProps> = ({
     localStorage.setItem('players', JSON.stringify(players));
     localStorage.setItem(`currentPlayer${playerNum}`, JSON.stringify(player));
     
+    // Also create/update server session for games that require it
+    try {
+      const { default: sessionManager } = await import('@/lib/sessionManager');
+      await sessionManager.createOrUpdateSession(player.username);
+    } catch (error) {
+      console.warn('Failed to create server session:', error);
+    }
+    
     if (playerNum === 1) {
       setCurrentPlayer1(player);
     } else {
@@ -116,7 +124,7 @@ const DualPlayerAuth: React.FC<DualPlayerAuthProps> = ({
   };
 
   // Handle login
-  const handleLogin = () => {
+  const handleLogin = async () => {
     if (!username.trim()) {
       toast({
         title: 'Username required',
@@ -132,7 +140,7 @@ const DualPlayerAuth: React.FC<DualPlayerAuthProps> = ({
 
     if (existingPlayer) {
       const updatedPlayer = { ...existingPlayer, isOnline: true };
-      savePlayer(updatedPlayer, activePlayer);
+      await savePlayer(updatedPlayer, activePlayer);
       
       if (activePlayer === 1) {
         onPlayer1Change(true, username);
@@ -160,7 +168,7 @@ const DualPlayerAuth: React.FC<DualPlayerAuthProps> = ({
   };
 
   // Handle registration
-  const handleRegister = () => {
+  const handleRegister = async () => {
     if (!username.trim()) {
       toast({
         title: 'Username required',
@@ -187,18 +195,20 @@ const DualPlayerAuth: React.FC<DualPlayerAuthProps> = ({
 
     // Create new player
     const colors = ['#805AD5', '#3182CE', '#38A169', '#D69E2E', '#E53E3E', '#DD6B20'];
+    const randomColor = colors[Math.floor(Math.random() * colors.length)];
+    const trimmedEmail = email.trim();
     const newPlayer: Player = {
       id: Date.now().toString() + '-' + activePlayer,
       username: username.trim(),
-      email: email.trim() || undefined,
+      ...(trimmedEmail && { email: trimmedEmail }),
       isOnline: true,
-      backgroundColor: colors[Math.floor(Math.random() * colors.length)],
+      backgroundColor: randomColor || '#805AD5',
       gamesPlayed: 0,
       gamesWon: 0,
       createdAt: new Date()
     };
 
-    savePlayer(newPlayer, activePlayer);
+    await savePlayer(newPlayer, activePlayer);
     
     if (activePlayer === 1) {
       onPlayer1Change(true, username);
@@ -217,7 +227,7 @@ const DualPlayerAuth: React.FC<DualPlayerAuthProps> = ({
   };
 
   // Handle offline play
-  const handleOfflinePlay = (playerNum: 1 | 2) => {
+  const handleOfflinePlay = async (playerNum: 1 | 2) => {
     const offlineUsername = playerNum === 1 ? player1Offline : player2Offline;
     
     if (!offlineUsername.trim()) {
@@ -246,6 +256,14 @@ const DualPlayerAuth: React.FC<DualPlayerAuthProps> = ({
     } else {
       setCurrentPlayer2(offlinePlayer);
       onPlayer2Change(true, offlineUsername.trim());
+    }
+    
+    // Create server session for offline play too (games need it)
+    try {
+      const { default: sessionManager } = await import('@/lib/sessionManager');
+      await sessionManager.createOrUpdateSession(offlineUsername.trim());
+    } catch (error) {
+      console.warn('Failed to create server session for offline play:', error);
     }
     
     toast({

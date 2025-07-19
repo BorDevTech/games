@@ -326,8 +326,10 @@ const UnoLike: React.FC = () => {
       if (publicRooms.length > 0) {
         // Join the first available public room
         const targetRoom = publicRooms[0];
-        await sessionManager.updateCurrentRoom(targetRoom.id);
-        window.location.href = `/games/04/room/${targetRoom.id}`;
+        if (targetRoom) {
+          await sessionManager.updateCurrentRoom(targetRoom.id);
+          window.location.href = `/games/04/room/${targetRoom.id}`;
+        }
       } else {
         // No public rooms available, create one
         const newPlayer = {

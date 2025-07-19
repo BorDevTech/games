@@ -435,7 +435,7 @@ const UnoLikeRoom: React.FC<UnoLikeRoomProps> = ({ roomId, initialRoom, onRoomDe
                         <Avatar 
                           size="sm" 
                           name={player.username}
-                          bg={player.id === 'ai-dealer-bot' ? 'purple.400' : undefined}
+                          {...(player.id === 'ai-dealer-bot' && { bg: 'purple.400' })}
                         />
                         <VStack align="start" spacing={0}>
                           <HStack spacing={1}>

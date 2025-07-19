@@ -155,6 +155,9 @@ const Tetris: React.FC = () => {
   const getRandomTetromino = (): Tetromino => {
     const types: TetrominoType[] = ['I', 'O', 'T', 'S', 'Z', 'J', 'L'];
     const type = types[Math.floor(Math.random() * types.length)];
+    if (!type) {
+      throw new Error('Invalid tetromino type generated');
+    }
     const tetrominoData = TETROMINOES[type];
     
     return {
@@ -167,12 +170,21 @@ const Tetris: React.FC = () => {
 
   const rotatePiece = (piece: Tetromino): number[][] => {
     const rows = piece.shape.length;
-    const cols = piece.shape[0].length;
+    const cols = piece.shape[0]?.length || 0;
+    if (cols === 0) {
+      return piece.shape;
+    }
     const rotated = Array(cols).fill(null).map(() => Array(rows).fill(0));
     
     for (let i = 0; i < rows; i++) {
       for (let j = 0; j < cols; j++) {
-        rotated[j][rows - 1 - i] = piece.shape[i][j];
+        const row = piece.shape[i];
+        if (row && row[j] !== undefined) {
+          const rotatedRow = rotated[j];
+          if (rotatedRow) {
+            rotatedRow[rows - 1 - i] = row[j];
+          }
+        }
       }
     }
     
@@ -181,8 +193,11 @@ const Tetris: React.FC = () => {
 
   const isValidPosition = (piece: Tetromino, board: (string | null)[][], offsetX = 0, offsetY = 0): boolean => {
     for (let y = 0; y < piece.shape.length; y++) {
-      for (let x = 0; x < piece.shape[y].length; x++) {
-        if (piece.shape[y][x]) {
+      const row = piece.shape[y];
+      if (!row) continue;
+      
+      for (let x = 0; x < row.length; x++) {
+        if (row[x]) {
           const newX = piece.position.x + x + offsetX;
           const newY = piece.position.y + y + offsetY;
           
@@ -190,7 +205,8 @@ const Tetris: React.FC = () => {
             return false;
           }
           
-          if (newY >= 0 && board[newY][newX]) {
+          const boardRow = board[newY];
+          if (newY >= 0 && boardRow && boardRow[newX]) {
             return false;
           }
         }
@@ -203,13 +219,19 @@ const Tetris: React.FC = () => {
     const newBoard = board.map(row => [...row]);
     
     for (let y = 0; y < piece.shape.length; y++) {
-      for (let x = 0; x < piece.shape[y].length; x++) {
-        if (piece.shape[y][x]) {
+      const row = piece.shape[y];
+      if (!row) continue;
+      
+      for (let x = 0; x < row.length; x++) {
+        if (row[x]) {
           const boardX = piece.position.x + x;
           const boardY = piece.position.y + y;
           
           if (boardY >= 0) {
-            newBoard[boardY][boardX] = piece.color;
+            const boardRow = newBoard[boardY];
+            if (boardRow) {
+              boardRow[boardX] = piece.color;
+            }
           }
         }
       }
@@ -222,7 +244,8 @@ const Tetris: React.FC = () => {
     const linesToClear: number[] = [];
     
     for (let y = 0; y < BOARD_HEIGHT; y++) {
-      if (board[y].every(cell => cell !== null)) {
+      const row = board[y];
+      if (row && row.every(cell => cell !== null)) {
         linesToClear.push(y);
       }
     }
@@ -242,7 +265,8 @@ const Tetris: React.FC = () => {
 
   const calculateScore = (linesCleared: number, level: number): number => {
     const baseScores = [0, 40, 100, 300, 1200];
-    return baseScores[linesCleared] * level;
+    const score = baseScores[linesCleared];
+    return score ? score * level : 0;
   };
 
   const getGhostPiece = (piece: Tetromino, board: (string | null)[][]): Tetromino | null => {
@@ -350,7 +374,7 @@ const Tetris: React.FC = () => {
       score: newScore,
       lines: newLines,
       level: newLevel,
-      timeLeft: newTimeLeft
+      timeLeft: newTimeLeft || 0
     });
     
     // Create new piece
@@ -499,7 +523,7 @@ const Tetris: React.FC = () => {
       score: 0,
       lines: 0,
       level: 1,
-      timeLeft: gameMode === 'timer' ? INITIAL_TIMER : undefined
+      timeLeft: gameMode === 'timer' ? INITIAL_TIMER : 0
     });
     setGameState('playing');
   };
@@ -533,14 +557,18 @@ const Tetris: React.FC = () => {
     const ghostPiece = getGhostPiece(currentPiece!, board);
     if (ghostPiece && currentPiece) {
       for (let y = 0; y < ghostPiece.shape.length; y++) {
-        for (let x = 0; x < ghostPiece.shape[y].length; x++) {
-          if (ghostPiece.shape[y][x]) {
+        const row = ghostPiece.shape[y];
+        if (!row) continue;
+        
+        for (let x = 0; x < row.length; x++) {
+          if (row[x]) {
             const boardX = ghostPiece.position.x + x;
             const boardY = ghostPiece.position.y + y;
             
             if (boardY >= 0 && boardY < BOARD_HEIGHT && boardX >= 0 && boardX < BOARD_WIDTH) {
-              if (!displayBoard[boardY][boardX]) {
-                displayBoard[boardY][boardX] = 'ghost';
+              const displayRow = displayBoard[boardY];
+              if (displayRow && !displayRow[boardX]) {
+                displayRow[boardX] = 'ghost';
               }
             }
           }
@@ -551,13 +579,19 @@ const Tetris: React.FC = () => {
     // Add current piece
     if (currentPiece) {
       for (let y = 0; y < currentPiece.shape.length; y++) {
-        for (let x = 0; x < currentPiece.shape[y].length; x++) {
-          if (currentPiece.shape[y][x]) {
+        const row = currentPiece.shape[y];
+        if (!row) continue;
+        
+        for (let x = 0; x < row.length; x++) {
+          if (row[x]) {
             const boardX = currentPiece.position.x + x;
             const boardY = currentPiece.position.y + y;
             
             if (boardY >= 0 && boardY < BOARD_HEIGHT && boardX >= 0 && boardX < BOARD_WIDTH) {
-              displayBoard[boardY][boardX] = currentPiece.color;
+              const displayRow = displayBoard[boardY];
+              if (displayRow) {
+                displayRow[boardX] = currentPiece.color;
+              }
             }
           }
         }
