@@ -203,8 +203,8 @@ export class UnoGameEngine {
     };
 
     // Check for win condition
-    const playerHand = newPlayerHands[playerId];
-    if (playerHand && playerHand.length === 0) {
+    const updatedPlayerHand = newPlayerHands[playerId];
+    if (updatedPlayerHand && updatedPlayerHand.length === 0) {
       newGameState = {
         ...newGameState,
         gamePhase: 'ended',
@@ -214,7 +214,7 @@ export class UnoGameEngine {
     }
 
     // Auto-call UNO if player has 1 card
-    if (playerHand && playerHand.length === 1) {
+    if (updatedPlayerHand && updatedPlayerHand.length === 1) {
       newGameState = {
         ...newGameState,
         unoCallouts: {
@@ -240,11 +240,13 @@ export class UnoGameEngine {
 
     // Check if deck needs reshuffling
     let { deck, discardPile } = gameState;
-    if (deck.length === 0) {
+    if (deck.length === 0 && discardPile.length > 1) {
       // Reshuffle discard pile (keep top card)
       const [topCard, ...cardsToShuffle] = discardPile;
-      deck = this.shuffleDeck(cardsToShuffle);
-      discardPile = [topCard];
+      if (topCard) {
+        deck = this.shuffleDeck(cardsToShuffle);
+        discardPile = [topCard];
+      }
     }
 
     if (deck.length === 0) {
@@ -324,11 +326,13 @@ export class UnoGameEngine {
     if (targetHand && targetHand.length === 1 && !hasCalledUno) {
       // Force target to draw 2 cards
       let { deck, discardPile } = gameState;
-      if (deck.length < 2) {
+      if (deck.length < 2 && discardPile.length > 1) {
         // Reshuffle if needed
         const [topCard, ...cardsToShuffle] = discardPile;
-        deck = [...deck, ...this.shuffleDeck(cardsToShuffle)];
-        discardPile = [topCard];
+        if (topCard) {
+          deck = [...deck, ...this.shuffleDeck(cardsToShuffle)];
+          discardPile = [topCard];
+        }
       }
 
       const penaltyCards = deck.slice(0, 2);
@@ -507,18 +511,23 @@ export class UnoGameEngine {
   private static advanceToNextPlayer(gameState: UnoGameState): UnoGameState {
     const playerCount = gameState.playerOrder.length;
     const nextIndex = (gameState.currentPlayerIndex + gameState.direction + playerCount) % playerCount;
+    const nextPlayerId = gameState.playerOrder[nextIndex];
+    
+    if (!nextPlayerId) {
+      return gameState; // Safety check
+    }
+
+    const newUnoCallouts = { ...gameState.unoCallouts };
+    // Reset UNO callout for next player if they have more than 1 card
+    newUnoCallouts[nextPlayerId] = 
+      gameState.playerHands[nextPlayerId]?.length === 1 
+        ? gameState.unoCallouts[nextPlayerId] || false
+        : false;
 
     return {
       ...gameState,
       currentPlayerIndex: nextIndex,
-      unoCallouts: {
-        ...gameState.unoCallouts,
-        // Reset UNO callout for next player if they have more than 1 card
-        [gameState.playerOrder[nextIndex]]: 
-          gameState.playerHands[gameState.playerOrder[nextIndex]]?.length === 1 
-            ? gameState.unoCallouts[gameState.playerOrder[nextIndex]] 
-            : false
-      }
+      unoCallouts: newUnoCallouts
     };
   }
 
@@ -594,7 +603,12 @@ export class UnoGameEngine {
     const shuffled = [...deck];
     for (let i = shuffled.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      const temp = shuffled[i];
+      const swapCard = shuffled[j];
+      if (temp && swapCard) {
+        shuffled[i] = swapCard;
+        shuffled[j] = temp;
+      }
     }
     return shuffled;
   }
@@ -610,7 +624,7 @@ export class UnoGameEngine {
       direction: gameState.direction,
       handSizes: Object.keys(gameState.playerHands).reduce((acc, playerId) => ({
         ...acc,
-        [playerId]: gameState.playerHands[playerId].length
+        [playerId]: gameState.playerHands[playerId]?.length || 0
       }), {}),
       deckSize: gameState.deck.length,
       drawCount: gameState.drawCount,
@@ -640,7 +654,7 @@ export class UnoGameEngine {
       winner: gameState.winner,
       handSizes: Object.keys(gameState.playerHands).reduce((acc, playerId) => ({
         ...acc,
-        [playerId]: gameState.playerHands[playerId].length
+        [playerId]: gameState.playerHands[playerId]?.length || 0
       }), {}),
       yourHand: gameState.playerHands[requestingPlayerId] || [],
       unoCallouts: gameState.unoCallouts,
