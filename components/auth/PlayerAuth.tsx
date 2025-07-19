@@ -69,16 +69,45 @@ const PlayerAuth: React.FC<PlayerAuthProps> = ({
 
   // Load player data on mount
   useEffect(() => {
-    const savedPlayer = localStorage.getItem('currentPlayer');
-    if (savedPlayer) {
-      const player = JSON.parse(savedPlayer);
-      setCurrentPlayer(player);
-      onAuthChange(true, player.username);
-    }
+    const loadPlayerData = async () => {
+      // First try to get from server session
+      try {
+        const { default: sessionManager } = await import('@/lib/sessionManager');
+        const session = await sessionManager.getCurrentSession();
+        if (session) {
+          // Convert session to player format
+          const player = {
+            id: session.playerId,
+            username: session.username,
+            isOnline: true,
+            backgroundColor: '#805AD5',
+            gamesPlayed: 0,
+            gamesWon: 0,
+            createdAt: session.createdAt
+          };
+          setCurrentPlayer(player);
+          onAuthChange(true, player.username);
+          return;
+        }
+      } catch (error) {
+        console.warn('Failed to load server session:', error);
+      }
+
+      // Fallback to localStorage
+      const savedPlayer = localStorage.getItem('currentPlayer');
+      if (savedPlayer) {
+        const player = JSON.parse(savedPlayer);
+        setCurrentPlayer(player);
+        onAuthChange(true, player.username);
+      }
+    };
+
+    loadPlayerData();
   }, [onAuthChange]);
 
   // Save player data
-  const savePlayer = (player: Player) => {
+  const savePlayer = async (player: Player) => {
+    // Save to localStorage for backward compatibility
     const players = JSON.parse(localStorage.getItem('players') || '[]');
     const existingIndex = players.findIndex((p: Player) => p.id === player.id);
     
@@ -90,11 +119,20 @@ const PlayerAuth: React.FC<PlayerAuthProps> = ({
     
     localStorage.setItem('players', JSON.stringify(players));
     localStorage.setItem('currentPlayer', JSON.stringify(player));
+    
+    // Also create/update server session for games that require it
+    try {
+      const { default: sessionManager } = await import('@/lib/sessionManager');
+      await sessionManager.createOrUpdateSession(player.username);
+    } catch (error) {
+      console.warn('Failed to create server session:', error);
+    }
+    
     setCurrentPlayer(player);
   };
 
   // Handle login
-  const handleLogin = () => {
+  const handleLogin = async () => {
     if (!username.trim()) {
       toast({
         title: 'Username required',
@@ -111,7 +149,7 @@ const PlayerAuth: React.FC<PlayerAuthProps> = ({
     if (existingPlayer) {
       // Login existing player
       const updatedPlayer = { ...existingPlayer, isOnline: true };
-      savePlayer(updatedPlayer);
+      await savePlayer(updatedPlayer);
       onAuthChange(true, username);
       onClose();
       toast({
@@ -132,7 +170,7 @@ const PlayerAuth: React.FC<PlayerAuthProps> = ({
   };
 
   // Handle registration
-  const handleRegister = () => {
+  const handleRegister = async () => {
     if (!username.trim()) {
       toast({
         title: 'Username required',
@@ -170,7 +208,7 @@ const PlayerAuth: React.FC<PlayerAuthProps> = ({
       createdAt: new Date()
     };
 
-    savePlayer(newPlayer);
+    await savePlayer(newPlayer);
     onAuthChange(true, username);
     onClose();
     toast({
@@ -182,7 +220,7 @@ const PlayerAuth: React.FC<PlayerAuthProps> = ({
   };
 
   // Handle offline play
-  const handleOfflinePlay = () => {
+  const handleOfflinePlay = async () => {
     if (!offlineUsername.trim()) {
       toast({
         title: 'Username required for offline play',
@@ -207,6 +245,14 @@ const PlayerAuth: React.FC<PlayerAuthProps> = ({
     setIsOffline(true);
     onAuthChange(true, offlineUsername.trim());
     
+    // Create server session for offline play too (games need it)
+    try {
+      const { default: sessionManager } = await import('@/lib/sessionManager');
+      await sessionManager.createOrUpdateSession(offlineUsername.trim());
+    } catch (error) {
+      console.warn('Failed to create server session for offline play:', error);
+    }
+    
     toast({
       title: 'Playing offline',
       description: 'Your stats won\'t be saved permanently',
@@ -217,16 +263,24 @@ const PlayerAuth: React.FC<PlayerAuthProps> = ({
   };
 
   // Handle logout
-  const handleLogout = () => {
+  const handleLogout = async () => {
     if (currentPlayer && !isOffline) {
       const updatedPlayer = { ...currentPlayer, isOnline: false };
-      savePlayer(updatedPlayer);
+      await savePlayer(updatedPlayer);
     }
     
     localStorage.removeItem('currentPlayer');
     setCurrentPlayer(null);
     setIsOffline(false);
     onAuthChange(false, '');
+    
+    // Clear server session too
+    try {
+      const { default: sessionManager } = await import('@/lib/sessionManager');
+      await sessionManager.clearSession();
+    } catch (error) {
+      console.warn('Failed to clear server session:', error);
+    }
     
     toast({
       title: 'Logged out successfully',
