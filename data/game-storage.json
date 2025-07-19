@@ -1,6 +1,64 @@
 {
-  "rooms": [],
+  "rooms": [
+    [
+      "ULRQL5",
+      {
+        "id": "ULRQL5",
+        "name": "Dealer's Room",
+        "type": "public",
+        "hostId": "ai-dealer-bot",
+        "players": [
+          {
+            "id": "ai-dealer-bot",
+            "username": "Dealer",
+            "handCount": 0,
+            "isHost": true,
+            "status": "waiting",
+            "ready": true,
+            "joinedAt": "2025-07-19T01:04:55.448Z",
+            "lastActivity": "2025-07-19T01:04:55.448Z"
+          },
+          {
+            "id": "player_QV8W1J",
+            "username": "TestPlayer",
+            "handCount": 0,
+            "status": "waiting",
+            "ready": true,
+            "isHost": false,
+            "joinedAt": "2025-07-19T01:04:55.448Z",
+            "lastActivity": "2025-07-19T01:07:53.962Z"
+          }
+        ],
+        "maxPlayers": 4,
+        "inGame": false,
+        "settings": {
+          "maxPlayers": 4,
+          "enablePowerCards": true,
+          "fastMode": false,
+          "customRules": []
+        },
+        "createdAt": "2025-07-19T01:04:55.448Z",
+        "lastActivity": "2025-07-19T01:07:53.963Z",
+        "waitingQueue": [],
+        "lastUpdated": "2025-07-19T01:07:54.010Z",
+        "syncedAt": "2025-07-19T01:07:54.010Z"
+      }
+    ]
+  ],
   "gameSessions": [],
-  "playerSessions": [],
-  "lastUpdated": "2025-07-19T01:02:25.343Z"
+  "playerSessions": [
+    [
+      "27b32e3e37cd37bb81f4c3a1316c4aac90855448a0987e7eead034b336beade7",
+      {
+        "sessionId": "27b32e3e37cd37bb81f4c3a1316c4aac90855448a0987e7eead034b336beade7",
+        "playerId": "player_QV8W1J",
+        "username": "TestPlayer",
+        "createdAt": "2025-07-19T01:04:41.470Z",
+        "lastActivity": "2025-07-19T01:07:10.518Z",
+        "lastUpdated": "2025-07-19T01:07:10.518Z",
+        "currentRoomId": "ULRQL5"
+      }
+    ]
+  ],
+  "lastUpdated": "2025-07-19T01:07:55.320Z"
 }
