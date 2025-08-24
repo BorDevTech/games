@@ -89,7 +89,7 @@ const GameHub: React.FC = () => {
   const getImplementedGameIds = (): string[] => {
     // Based on app/games/[id]/page.tsx, these games are implemented
  
-    return ['01', '02', '03', '04'];  
+    return ['01', '02', '03', '04', '05'];  
   };
 
   // Function to map game ID to route ID
@@ -99,10 +99,11 @@ const GameHub: React.FC = () => {
       2: '02', // Galaga 
       3: '03', // Tetris
       4: '04', // UNO-Like Card Game
+      5: '05', // Connect Four
       // Add more mappings here when games are implemented
-      // 5: '05', // Cyber Quest 2024
-      // 6: '06', // Space Warrior  
-      // 7: '07', // Mystic Realms 
+      // 6: '06', // Cyber Quest 2024
+      // 7: '07', // Space Warrior  
+      // 8: '08', // Mystic Realms 
     };
     return gameRouteMap[gameId] || null;
   };
@@ -151,6 +152,16 @@ const GameHub: React.FC = () => {
     },
     {
       id: 5, 
+      title: "Connect Four",
+      genre: "Strategy",
+      rating: 4.7,
+      players: "2 Players",
+      image: "https://via.placeholder.com/300x200/3182ce/ffffff?text=Connect+Four",
+      price: "Free",
+      description: "Classic Connect Four! Drop pieces to get four in a row. Play against a friend or challenge our smart AI."
+    },
+    {
+      id: 6, 
       title: "Cyber Quest 2024",
       genre: "RPG/Adventure",
       rating: 4.8,
@@ -160,7 +171,7 @@ const GameHub: React.FC = () => {
       description: "An immersive cyberpunk adventure in a dystopian future."
     },
     { 
-      id: 6, 
+      id: 7, 
       title: "Space Warrior",
       genre: "Action/Shooter",
       rating: 4.6,
@@ -170,7 +181,7 @@ const GameHub: React.FC = () => {
       description: "Epic space battles across multiple galaxies."
     },
     { 
-      id: 7, 
+      id: 8, 
       title: "Mystic Realms",
       genre: "Fantasy/Strategy",
       rating: 4.9,
