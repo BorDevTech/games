@@ -16,7 +16,8 @@ import TicTacToe from '@/components/games/TicTacToe';
 import Galaga from '@/components/games/Galaga'; 
 import Tetris from '@/components/games/Tetris'; 
 import UnoLike from '@/components/games/UnoLike';
-import ConnectFour from '@/components/games/ConnectFour'; 
+import ConnectFour from '@/components/games/ConnectFour';
+import Asteroid from '@/components/games/Asteroid'; 
 
 const GamePage: React.FC = () => {
   const params = useParams();
@@ -35,7 +36,9 @@ const GamePage: React.FC = () => {
     'uno': '04',       // Alternative direct name access
     'unolike': '04',   // Alternative direct name access
     'connectfour': '05', // Alternative direct name access
-    'connect4': '05'   // Alternative direct name access
+    'connect4': '05',   // Alternative direct name access
+    'asteroid': '06',   // Alternative direct name access
+    'asteroids': '06'   // Alternative direct name access
   };
   
   // Check if we need to redirect to the correct ID
@@ -61,6 +64,8 @@ const GamePage: React.FC = () => {
         return <UnoLike />;
       case '05':
         return <ConnectFour />;
+      case '06':
+        return <Asteroid />;
       default:
         return (
           <VStack spacing={6} textAlign="center">
@@ -86,6 +91,8 @@ const GamePage: React.FC = () => {
         return 'UNO-Like Card Game';
       case '05':
         return 'Connect Four';
+      case '06':
+        return 'Asteroid';
       default:
         return 'Unknown Game';
     }
