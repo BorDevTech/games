@@ -103,6 +103,7 @@ const Asteroid: React.FC = () => {
   const [playerMode, setPlayerMode] = useState<PlayerMode>('cooperative');
   const [slowTimeActive, setSlowTimeActive] = useState(false);
   const [slowTimeEnd, setSlowTimeEnd] = useState(0);
+  const [waveCompleting, setWaveCompleting] = useState(false);
   
   // Game objects
   const [ships, setShips] = useState<Ship[]>([]);
@@ -212,6 +213,7 @@ const Asteroid: React.FC = () => {
     setPowerUps([]);
     setSlowTimeActive(false);
     setSlowTimeEnd(0);
+    setWaveCompleting(false);
   }, [playerMode, wave, createShip, createRandomAsteroids]);
 
   // Input handling
@@ -411,9 +413,7 @@ const Asteroid: React.FC = () => {
     
     // Update asteroids
     setAsteroids(prevAsteroids =>
-      prevAsteroids.map(asteroid => {
-        if (!asteroid.active) return asteroid;
-        
+      prevAsteroids.filter(asteroid => asteroid.active).map(asteroid => {
         const newAsteroid = { ...asteroid };
         
         // Update position
@@ -473,6 +473,10 @@ const Asteroid: React.FC = () => {
   const checkCollisions = useCallback(() => {
     const currentTime = Date.now();
     
+    // Performance optimization: limit collision checks if too many objects
+    const totalObjects = asteroids.length + bullets.length + powerUps.length;
+    const performanceMode = totalObjects > 50;
+    
     // Helper function for circle collision
     const circleCollision = (obj1: GameObject, obj2: GameObject, radius1: number, radius2: number) => {
       const dx = obj1.position.x - obj2.position.x;
@@ -513,57 +517,88 @@ const Asteroid: React.FC = () => {
       })
     );
     
-    // Bullet-asteroid collisions
-    setBullets(prevBullets => 
-      prevBullets.map(bullet => {
-        if (!bullet.active) return bullet;
+    // Bullet-asteroid collisions (optimized for performance)
+    const activeBullets = bullets.filter(bullet => bullet.active);
+    const activeAsteroids = asteroids.filter(asteroid => asteroid.active);
+    
+    // Performance optimization: batch process collisions
+    const collisionPairs: { bullet: Bullet; asteroid: Asteroid }[] = [];
+    
+    for (const bullet of activeBullets) {
+      for (const asteroid of activeAsteroids) {
+        if (circleCollision(bullet, asteroid, 2, getAsteroidSize(asteroid.size))) {
+          collisionPairs.push({ bullet, asteroid });
+          break; // Each bullet can only hit one asteroid
+        }
+      }
+    }
+    
+    // Process all collisions at once
+    if (collisionPairs.length > 0) {
+      const bulletsToRemove = new Set<string>();
+      const asteroidsToRemove = new Set<string>();
+      const newAsteroids: Asteroid[] = [];
+      const newPowerUps: PowerUp[] = [];
+      const scoreUpdates: { playerId: string; points: number }[] = [];
+      
+      for (const { bullet, asteroid } of collisionPairs) {
+        bulletsToRemove.add(bullet.id);
+        asteroidsToRemove.add(asteroid.id);
         
-        setAsteroids(prevAsteroids => {
-          const hitAsteroid = prevAsteroids.find(asteroid => 
-            asteroid.active && circleCollision(bullet, asteroid, 2, getAsteroidSize(asteroid.size))
-          );
-          
-          if (hitAsteroid) {
-            bullet.active = false;
-            hitAsteroid.active = false;
-            
-            // Update score
-            setShips(prevShips => 
-              prevShips.map(ship => {
-                if (ship.playerId.toString() === bullet.owner.slice(-1)) {
-                  return { ...ship, score: ship.score + hitAsteroid.points };
-                }
-                return ship;
-              })
-            );
-            
-            // Split asteroid if large or medium
-            if (hitAsteroid.size === 'large') {
-              const newAsteroids = [
-                createAsteroid(hitAsteroid.position.x, hitAsteroid.position.y, 'medium', -2, -1),
-                createAsteroid(hitAsteroid.position.x, hitAsteroid.position.y, 'medium', 2, 1)
-              ];
-              setAsteroids(prev => [...prev, ...newAsteroids]);
-            } else if (hitAsteroid.size === 'medium') {
-              const newAsteroids = [
-                createAsteroid(hitAsteroid.position.x, hitAsteroid.position.y, 'small', -1.5, -0.5),
-                createAsteroid(hitAsteroid.position.x, hitAsteroid.position.y, 'small', 1.5, 0.5)
-              ];
-              setAsteroids(prev => [...prev, ...newAsteroids]);
-            }
-            
-            // Chance to drop powerup
-            if (Math.random() < 0.15) { // 15% chance
-              setPowerUps(prev => [...prev, createPowerUp(hitAsteroid.position.x, hitAsteroid.position.y)]);
-            }
-          }
-          
-          return prevAsteroids;
+        // Track score update
+        scoreUpdates.push({
+          playerId: bullet.owner.slice(-1),
+          points: asteroid.points
         });
         
-        return bullet;
-      }).filter(bullet => bullet.active)
-    );
+        // Split asteroid if large or medium
+        if (asteroid.size === 'large') {
+          newAsteroids.push(
+            createAsteroid(asteroid.position.x, asteroid.position.y, 'medium', -2, -1),
+            createAsteroid(asteroid.position.x, asteroid.position.y, 'medium', 2, 1)
+          );
+        } else if (asteroid.size === 'medium') {
+          newAsteroids.push(
+            createAsteroid(asteroid.position.x, asteroid.position.y, 'small', -1.5, -0.5),
+            createAsteroid(asteroid.position.x, asteroid.position.y, 'small', 1.5, 0.5)
+          );
+        }
+        
+        // Chance to drop powerup (reduced chance in performance mode)
+        const powerUpChance = performanceMode ? 0.08 : 0.15;
+        if (Math.random() < powerUpChance) {
+          newPowerUps.push(createPowerUp(asteroid.position.x, asteroid.position.y));
+        }
+      }
+      
+      // Apply all changes at once
+      setBullets(prevBullets => 
+        prevBullets.filter(bullet => !bulletsToRemove.has(bullet.id))
+      );
+      
+      setAsteroids(prevAsteroids => [
+        ...prevAsteroids.filter(asteroid => !asteroidsToRemove.has(asteroid.id)),
+        ...newAsteroids
+      ]);
+      
+      setPowerUps(prevPowerUps => [...prevPowerUps, ...newPowerUps]);
+      
+      // Update scores
+      if (scoreUpdates.length > 0) {
+        setShips(prevShips => 
+          prevShips.map(ship => {
+            const totalPoints = scoreUpdates
+              .filter(update => update.playerId === ship.playerId.toString())
+              .reduce((sum, update) => sum + update.points, 0);
+            
+            if (totalPoints > 0) {
+              return { ...ship, score: ship.score + totalPoints };
+            }
+            return ship;
+          })
+        );
+      }
+    }
     
     // Ship-powerup collisions
     setShips(prevShips => 
@@ -630,7 +665,7 @@ const Asteroid: React.FC = () => {
         return newShip;
       })
     );
-  }, [createAsteroid, createPowerUp, toast]);
+  }, [createAsteroid, createPowerUp, toast, asteroids, bullets, powerUps]);
 
   // Helper function to get asteroid visual size
   const getAsteroidSize = (size: 'large' | 'medium' | 'small') => {
@@ -680,8 +715,10 @@ const Asteroid: React.FC = () => {
     // Check win condition (all asteroids destroyed)
     setAsteroids(prevAsteroids => {
       const activeAsteroids = prevAsteroids.filter(asteroid => asteroid.active);
-      if (activeAsteroids.length === 0) {
-        // Wave complete
+      if (activeAsteroids.length === 0 && !waveCompleting) {
+        // Wave complete - only trigger once
+        setWaveCompleting(true);
+        
         toast({
           title: `Wave ${wave} Complete!`,
           status: 'success',
@@ -689,11 +726,12 @@ const Asteroid: React.FC = () => {
           isClosable: true,
         });
         
-        // Start next wave
+        // Start next wave after a delay
         setTimeout(() => {
           setWave(prev => prev + 1);
-          const nextWaveAsteroids = createRandomAsteroids(4 + wave);
+          const nextWaveAsteroids = createRandomAsteroids(Math.min(4 + wave, 12)); // Cap at 12 asteroids for performance
           setAsteroids(nextWaveAsteroids);
+          setWaveCompleting(false);
         }, 2000);
       }
       return prevAsteroids;
@@ -708,7 +746,7 @@ const Asteroid: React.FC = () => {
       }
       return prevShips;
     });
-  }, [gameState, updateShips, updateGameObjects, checkCollisions, wave, toast, createRandomAsteroids, saveGameResult]);
+  }, [gameState, updateShips, updateGameObjects, checkCollisions, wave, waveCompleting, toast, createRandomAsteroids, saveGameResult]);
 
   // Game loop effect
   useEffect(() => {
@@ -745,6 +783,7 @@ const Asteroid: React.FC = () => {
   const resetGame = () => {
     setGameState('setup');
     setWave(1);
+    setWaveCompleting(false);
     onOpen();
   };
 
