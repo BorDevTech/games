@@ -280,7 +280,7 @@ const Asteroid: React.FC = () => {
               for (let i = -1; i <= 1; i++) {
                 const spreadAngle = angle + (i * Math.PI / 12); // 15 degrees spread
                 newBullets.push({
-                  id: `bullet-${Date.now()}-${i}`,
+                  id: `bullet-${currentTime}-${ship.playerId}-${i}-${Math.random().toString(36).substr(2, 9)}`,
                   position: { ...bulletStart },
                   velocity: {
                     x: Math.cos(spreadAngle) * BULLET_SPEED,
@@ -295,7 +295,7 @@ const Asteroid: React.FC = () => {
             } else {
               // Normal shot
               newBullets.push({
-                id: `bullet-${Date.now()}`,
+                id: `bullet-${currentTime}-${ship.playerId}-${Math.random().toString(36).substr(2, 9)}`,
                 position: { ...bulletStart },
                 velocity: {
                   x: Math.cos(angle) * BULLET_SPEED,
@@ -343,7 +343,7 @@ const Asteroid: React.FC = () => {
               for (let i = -1; i <= 1; i++) {
                 const spreadAngle = angle + (i * Math.PI / 12);
                 newBullets.push({
-                  id: `bullet-${Date.now()}-${i}`,
+                  id: `bullet-${currentTime}-${ship.playerId}-${i}-${Math.random().toString(36).substr(2, 9)}`,
                   position: { ...bulletStart },
                   velocity: {
                     x: Math.cos(spreadAngle) * BULLET_SPEED,
@@ -357,7 +357,7 @@ const Asteroid: React.FC = () => {
               }
             } else {
               newBullets.push({
-                id: `bullet-${Date.now()}`,
+                id: `bullet-${currentTime}-${ship.playerId}-${Math.random().toString(36).substr(2, 9)}`,
                 position: { ...bulletStart },
                 velocity: {
                   x: Math.cos(angle) * BULLET_SPEED,
@@ -485,37 +485,51 @@ const Asteroid: React.FC = () => {
       return distance < radius1 + radius2;
     };
     
-    // Ship-asteroid collisions
-    setShips(prevShips => 
-      prevShips.map(ship => {
-        if (!ship.active || ship.invulnerable) return ship;
-        
-        const newShip = { ...ship };
-        
-        setAsteroids(prevAsteroids => {
-          const collided = prevAsteroids.find(asteroid => 
-            asteroid.active && circleCollision(ship, asteroid, SHIP_SIZE, getAsteroidSize(asteroid.size))
-          );
-          
-          if (collided) {
+    // Ship-asteroid collisions - collect collision data first
+    const shipAsteroidCollisions: { shipId: string; asteroidId: string }[] = [];
+    
+    // Detect collisions without state updates
+    ships.forEach(ship => {
+      if (!ship.active || ship.invulnerable) return;
+      
+      const collidedAsteroid = asteroids.find(asteroid => 
+        asteroid.active && circleCollision(ship, asteroid, SHIP_SIZE, getAsteroidSize(asteroid.size))
+      );
+      
+      if (collidedAsteroid) {
+        shipAsteroidCollisions.push({ shipId: ship.id, asteroidId: collidedAsteroid.id });
+      }
+    });
+    
+    // Apply collision effects if any collisions occurred
+    if (shipAsteroidCollisions.length > 0) {
+      // Update ships
+      setShips(prevShips => 
+        prevShips.map(ship => {
+          const collision = shipAsteroidCollisions.find(c => c.shipId === ship.id);
+          if (collision) {
+            const newShip = { ...ship };
             newShip.lives -= 1;
             newShip.invulnerable = true;
             newShip.invulnerabilityEnd = currentTime + INVULNERABILITY_TIME;
             
-            // Destroy the asteroid
-            collided.active = false;
-            
             if (newShip.lives <= 0) {
               newShip.active = false;
             }
+            
+            return newShip;
           }
-          
-          return prevAsteroids;
-        });
-        
-        return newShip;
-      })
-    );
+          return ship;
+        })
+      );
+      
+      // Update asteroids - remove collided ones
+      setAsteroids(prevAsteroids =>
+        prevAsteroids.filter(asteroid => 
+          !shipAsteroidCollisions.some(c => c.asteroidId === asteroid.id)
+        )
+      );
+    }
     
     // Bullet-asteroid collisions (optimized for performance)
     const activeBullets = bullets.filter(bullet => bullet.active);
@@ -665,7 +679,7 @@ const Asteroid: React.FC = () => {
         return newShip;
       })
     );
-  }, [createAsteroid, createPowerUp, toast, asteroids, bullets, powerUps]);
+  }, [createAsteroid, createPowerUp, toast, asteroids, bullets, powerUps, ships]);
 
   // Helper function to get asteroid visual size
   const getAsteroidSize = (size: 'large' | 'medium' | 'small') => {
@@ -878,7 +892,7 @@ const Asteroid: React.FC = () => {
             top={`${ship.position.y - SHIP_SIZE/2}px`}
             width={`${SHIP_SIZE}px`}
             height={`${SHIP_SIZE}px`}
-            transform={`rotate(${ship.rotation}deg)`}
+            transform={`rotate(${ship.rotation - 90}deg)`}
             display="flex"
             alignItems="center"
             justifyContent="center"
