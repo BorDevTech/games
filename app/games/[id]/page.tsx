@@ -1,6 +1,6 @@
 "use client";
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { 
   Box, 
   Container, 
@@ -43,13 +43,16 @@ const GamePage: React.FC = () => {
   
   // Check if we need to redirect to the correct ID
   const correctId = gameAliases[originalGameId.toLowerCase()];
-  if (correctId) {
-    router.replace(`/games/${correctId}`);
-    return null; // Don't render anything while redirecting
-  }
   
-  // Use the original game ID if no alias found
-  const gameId = originalGameId;
+  // Use the correct ID for rendering, handle redirect on client side only
+  const gameId = correctId || originalGameId;
+  
+  // Handle client-side redirect if needed
+  useEffect(() => {
+    if (correctId && typeof window !== 'undefined') {
+      router.replace(`/games/${correctId}`);
+    }
+  }, [correctId, router]);
 
   // Game configuration based on ID
   const getGameComponent = () => {
