@@ -29,6 +29,7 @@ type GameBoard = CellValue[][];
 type Player = 'Red' | 'Yellow';
 type GameMode = 'pvp' | 'pvc';
 type GameState = 'setup' | 'playing' | 'finished';
+type WinningLine = { row: number; col: number }[] | null;
 
 interface GameResult {
   winner: Player | 'draw' | null;
@@ -38,10 +39,45 @@ interface GameResult {
   timestamp: Date;
 }
 
+interface WinResult {
+  winner: Player | 'draw' | null;
+  winningLine: WinningLine;
+}
+
 const ROWS = 6;
 const COLS = 7;
 
 const ConnectFour: React.FC = () => {
+  // Add pulse animation styles
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const styleElement = document.createElement('style');
+      styleElement.textContent = `
+        @keyframes pulse {
+          0% {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+          }
+          50% {
+            opacity: 0.7;
+            transform: translate(-50%, -50%) scale(1.1);
+          }
+          100% {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+          }
+        }
+      `;
+      document.head.appendChild(styleElement);
+      
+      return () => {
+        if (document.head.contains(styleElement)) {
+          document.head.removeChild(styleElement);
+        }
+      };
+    }
+  }, []);
+
   // Game state
   const [board, setBoard] = useState<GameBoard>(() => 
     Array(ROWS).fill(null).map(() => Array(COLS).fill(null))
@@ -50,6 +86,7 @@ const ConnectFour: React.FC = () => {
   const [gameState, setGameState] = useState<GameState>('setup');
   const [gameMode, setGameMode] = useState<GameMode>('pvp');
   const [winner, setWinner] = useState<Player | 'draw' | null>(null);
+  const [winningLine, setWinningLine] = useState<WinningLine>(null);
   
   // Player management
   const [player1, setPlayer1] = useState<{ isAuthenticated: boolean; username: string; } | null>(null);
@@ -60,7 +97,7 @@ const ConnectFour: React.FC = () => {
   const toast = useToast();
 
   // Check for winning combinations
-  const checkWinner = (gameBoard: GameBoard): Player | 'draw' | null => {
+  const checkWinner = (gameBoard: GameBoard): WinResult => {
     // Check horizontal
     for (let row = 0; row < ROWS; row++) {
       for (let col = 0; col < COLS - 3; col++) {
@@ -70,7 +107,15 @@ const ConnectFour: React.FC = () => {
           gameBoard[row][col] === gameBoard[row][col + 2] &&
           gameBoard[row][col] === gameBoard[row][col + 3]
         ) {
-          return gameBoard[row][col] as Player;
+          return {
+            winner: gameBoard[row][col] as Player,
+            winningLine: [
+              { row, col },
+              { row, col: col + 1 },
+              { row, col: col + 2 },
+              { row, col: col + 3 }
+            ]
+          };
         }
       }
     }
@@ -84,7 +129,15 @@ const ConnectFour: React.FC = () => {
           gameBoard[row][col] === gameBoard[row + 2][col] &&
           gameBoard[row][col] === gameBoard[row + 3][col]
         ) {
-          return gameBoard[row][col] as Player;
+          return {
+            winner: gameBoard[row][col] as Player,
+            winningLine: [
+              { row, col },
+              { row: row + 1, col },
+              { row: row + 2, col },
+              { row: row + 3, col }
+            ]
+          };
         }
       }
     }
@@ -98,7 +151,15 @@ const ConnectFour: React.FC = () => {
           gameBoard[row][col] === gameBoard[row + 2][col + 2] &&
           gameBoard[row][col] === gameBoard[row + 3][col + 3]
         ) {
-          return gameBoard[row][col] as Player;
+          return {
+            winner: gameBoard[row][col] as Player,
+            winningLine: [
+              { row, col },
+              { row: row + 1, col: col + 1 },
+              { row: row + 2, col: col + 2 },
+              { row: row + 3, col: col + 3 }
+            ]
+          };
         }
       }
     }
@@ -112,17 +173,25 @@ const ConnectFour: React.FC = () => {
           gameBoard[row][col] === gameBoard[row + 2][col - 2] &&
           gameBoard[row][col] === gameBoard[row + 3][col - 3]
         ) {
-          return gameBoard[row][col] as Player;
+          return {
+            winner: gameBoard[row][col] as Player,
+            winningLine: [
+              { row, col },
+              { row: row + 1, col: col - 1 },
+              { row: row + 2, col: col - 2 },
+              { row: row + 3, col: col - 3 }
+            ]
+          };
         }
       }
     }
 
     // Check for draw
     if (gameBoard[0].every(cell => cell !== null)) {
-      return 'draw';
+      return { winner: 'draw', winningLine: null };
     }
 
-    return null;
+    return { winner: null, winningLine: null };
   };
 
   // Find the lowest available row in a column
@@ -145,7 +214,7 @@ const ConnectFour: React.FC = () => {
       if (row !== -1) {
         const testBoard = gameBoard.map(r => [...r]);
         testBoard[row][col] = 'Yellow';
-        if (checkWinner(testBoard) === 'Yellow') {
+        if (checkWinner(testBoard).winner === 'Yellow') {
           return col;
         }
       }
@@ -157,7 +226,7 @@ const ConnectFour: React.FC = () => {
       if (row !== -1) {
         const testBoard = gameBoard.map(r => [...r]);
         testBoard[row][col] = 'Red';
-        if (checkWinner(testBoard) === 'Red') {
+        if (checkWinner(testBoard).winner === 'Red') {
           return col;
         }
       }
@@ -248,10 +317,11 @@ const ConnectFour: React.FC = () => {
     setBoard(newBoard);
 
     const gameResult = checkWinner(newBoard);
-    if (gameResult) {
-      setWinner(gameResult);
+    if (gameResult.winner) {
+      setWinner(gameResult.winner);
+      setWinningLine(gameResult.winningLine);
       setGameState('finished');
-      saveGameResult(gameResult);
+      saveGameResult(gameResult.winner);
       return;
     }
 
@@ -273,10 +343,11 @@ const ConnectFour: React.FC = () => {
             setBoard(newBoard);
 
             const gameResult = checkWinner(newBoard);
-            if (gameResult) {
-              setWinner(gameResult);
+            if (gameResult.winner) {
+              setWinner(gameResult.winner);
+              setWinningLine(gameResult.winningLine);
               setGameState('finished');
-              saveGameResult(gameResult);
+              saveGameResult(gameResult.winner);
             } else {
               setCurrentPlayer('Red');
             }
@@ -293,6 +364,7 @@ const ConnectFour: React.FC = () => {
     setBoard(Array(ROWS).fill(null).map(() => Array(COLS).fill(null)));
     setCurrentPlayer('Red');
     setWinner(null);
+    setWinningLine(null);
     setGameState('playing');
   };
 
@@ -301,6 +373,7 @@ const ConnectFour: React.FC = () => {
     setBoard(Array(ROWS).fill(null).map(() => Array(COLS).fill(null)));
     setCurrentPlayer('Red');
     setWinner(null);
+    setWinningLine(null);
     setGameState('setup');
   };
 
@@ -308,6 +381,12 @@ const ConnectFour: React.FC = () => {
   const getCurrentPlayerName = () => {
     if (currentPlayer === 'Red') return player1?.username || 'Player 1';
     return gameMode === 'pvc' ? 'Bot' : (player2?.username || 'Player 2');
+  };
+
+  // Check if a cell is part of the winning line
+  const isWinningCell = (row: number, col: number): boolean => {
+    if (!winningLine) return false;
+    return winningLine.some(cell => cell.row === row && cell.col === col);
   };
 
   // Setup phase
@@ -447,25 +526,43 @@ const ConnectFour: React.FC = () => {
         {/* Game Board Grid */}
         <Grid templateColumns={`repeat(${COLS}, 1fr)`} gap={1} bg="blue.600" p={2} borderRadius="md">
           {board.map((row, rowIndex) =>
-            row.map((cell, colIndex) => (
-              <GridItem key={`${rowIndex}-${colIndex}`}>
-                <Button
-                  w="50px"
-                  h="50px"
-                  borderRadius="50%"
-                  bg={
-                    cell === 'Red' ? 'red.500' : 
-                    cell === 'Yellow' ? 'yellow.400' : 
-                    'white'
-                  }
-                  border="2px solid"
-                  borderColor="blue.700"
-                  _hover={{}}
-                  cursor="default"
-                  isDisabled={true}
-                />
-              </GridItem>
-            ))
+            row.map((cell, colIndex) => {
+              const isWinning = isWinningCell(rowIndex, colIndex);
+              return (
+                <GridItem key={`${rowIndex}-${colIndex}`}>
+                  <Button
+                    w="50px"
+                    h="50px"
+                    borderRadius="50%"
+                    bg={
+                      cell === 'Red' ? 'red.500' : 
+                      cell === 'Yellow' ? 'yellow.400' : 
+                      'white'
+                    }
+                    border="2px solid"
+                    borderColor={isWinning ? 'green.400' : 'blue.700'}
+                    boxShadow={isWinning ? '0 0 10px rgba(72, 187, 120, 0.8)' : 'none'}
+                    _hover={{}}
+                    cursor="default"
+                    isDisabled={true}
+                    position="relative"
+                    _after={isWinning ? {
+                      content: '""',
+                      position: 'absolute',
+                      top: '50%',
+                      left: '50%',
+                      transform: 'translate(-50%, -50%)',
+                      width: '60px',
+                      height: '60px',
+                      borderRadius: '50%',
+                      border: '3px solid',
+                      borderColor: 'green.400',
+                      animation: 'pulse 1.5s ease-in-out infinite'
+                    } : {}}
+                  />
+                </GridItem>
+              );
+            })
           )}
         </Grid>
       </VStack>
