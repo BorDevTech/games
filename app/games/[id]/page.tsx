@@ -1,6 +1,6 @@
 "use client";
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { 
   Box, 
   Container, 
@@ -15,7 +15,9 @@ import { useParams, useRouter } from 'next/navigation';
 import TicTacToe from '@/components/games/TicTacToe';
 import Galaga from '@/components/games/Galaga'; 
 import Tetris from '@/components/games/Tetris'; 
-import UnoLike from '@/components/games/UnoLike'; 
+import UnoLike from '@/components/games/UnoLike';
+import ConnectFour from '@/components/games/ConnectFour';
+import Asteroid from '@/components/games/Asteroid'; 
 
 const GamePage: React.FC = () => {
   const params = useParams();
@@ -32,18 +34,25 @@ const GamePage: React.FC = () => {
     'tictactoe': '01', // Alternative direct name access  
     'galaga': '02',    // Alternative direct name access
     'uno': '04',       // Alternative direct name access
-    'unolike': '04'    // Alternative direct name access
+    'unolike': '04',   // Alternative direct name access
+    'connectfour': '05', // Alternative direct name access
+    'connect4': '05',   // Alternative direct name access
+    'asteroid': '06',   // Alternative direct name access
+    'asteroids': '06'   // Alternative direct name access
   };
   
   // Check if we need to redirect to the correct ID
   const correctId = gameAliases[originalGameId.toLowerCase()];
-  if (correctId) {
-    router.replace(`/games/${correctId}`);
-    return null; // Don't render anything while redirecting
-  }
   
-  // Use the original game ID if no alias found
-  const gameId = originalGameId;
+  // Use the correct ID for rendering, handle redirect on client side only
+  const gameId = correctId || originalGameId;
+  
+  // Handle client-side redirect if needed
+  useEffect(() => {
+    if (correctId && typeof window !== 'undefined') {
+      router.replace(`/games/${correctId}`);
+    }
+  }, [correctId, router]);
 
   // Game configuration based on ID
   const getGameComponent = () => {
@@ -56,6 +65,10 @@ const GamePage: React.FC = () => {
         return <Tetris />; 
       case '04':
         return <UnoLike />;
+      case '05':
+        return <ConnectFour />;
+      case '06':
+        return <Asteroid />;
       default:
         return (
           <VStack spacing={6} textAlign="center">
@@ -79,6 +92,10 @@ const GamePage: React.FC = () => {
         return 'Tetris'; 
       case '04':
         return 'UNO-Like Card Game';
+      case '05':
+        return 'Connect Four';
+      case '06':
+        return 'Asteroid';
       default:
         return 'Unknown Game';
     }
