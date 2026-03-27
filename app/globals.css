@@ -1,25 +1,86 @@
-/* Global styles for the games landing page */
+/* Enhanced global styles following MDN and accessibility standards */
+
+/* CSS Reset and base styles */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
 html {
+  /* Set base font size to 16px for accessibility */
+  font-size: 16px;
+  /* Smooth scrolling for better UX */
   scroll-behavior: smooth;
+  /* Better text rendering */
+  -webkit-text-size-adjust: 100%;
+  -moz-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  /* Prevent horizontal scrolling */
+  overflow-x: hidden;
 }
 
 body {
   margin: 0;
   padding: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+  /* Modern font stack for better performance and readability */
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
     sans-serif;
+  /* Better font rendering */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Improve text rendering */
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "kern" 1, "liga" 1, "calt" 1;
+  /* Better line height for readability */
+  line-height: 1.6;
+  /* Prevent horizontal scrolling */
+  overflow-x: hidden;
+  /* Ensure proper color contrast */
+  color: #1a202c;
+  background-color: #f7fafc;
 }
 
-/* Focus indicators for accessibility */
+/* Enhanced focus indicators for accessibility */
 *:focus {
-  outline: 2px solid #3182ce;
+  outline: 2px solid #805ad5;
   outline-offset: 2px;
+  border-radius: 4px;
 }
 
-/* Skip link for screen readers */
+*:focus:not(:focus-visible) {
+  outline: none;
+}
+
+*:focus-visible {
+  outline: 2px solid #805ad5;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Skip links for screen readers */
+.skip-link {
+  position: absolute;
+  top: -100px;
+  left: 0;
+  background-color: #805ad5;
+  color: white;
+  padding: 1rem;
+  text-decoration: none;
+  z-index: 1000;
+  border-radius: 0 0 4px 0;
+  font-weight: 600;
+  transition: top 0.2s ease-in-out;
+}
+
+.skip-link:focus {
+  top: 0;
+}
+
+/* Screen reader only content */
 .sr-only {
   position: absolute;
   width: 1px;
@@ -41,4 +102,350 @@ body {
   overflow: visible;
   clip: auto;
   white-space: normal;
+  background-color: #805ad5;
+  color: white;
+  border-radius: 4px;
+}
+
+/* Reduced motion support for accessibility */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  * {
+    border-color: currentColor;
+  }
+  
+  button,
+  input,
+  select,
+  textarea {
+    border: 2px solid currentColor;
+  }
+}
+
+/* Color scheme support */
+@media (prefers-color-scheme: dark) {
+  body {
+    color: #f7fafc;
+    background-color: #1a202c;
+  }
+}
+
+/* Print styles for better printing experience */
+@media print {
+  *,
+  *::before,
+  *::after {
+    background: white !important;
+    color: black !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+  
+  a,
+  a:visited {
+    text-decoration: underline;
+  }
+  
+  a[href^="http"]:after {
+    content: " (" attr(href) ")";
+  }
+  
+  img {
+    max-width: 100% !important;
+    page-break-inside: avoid;
+  }
+  
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    page-break-after: avoid;
+  }
+  
+  p,
+  blockquote {
+    page-break-inside: avoid;
+  }
+  
+  .no-print {
+    display: none !important;
+  }
+}
+
+/* Mobile-first responsive typography */
+@media screen and (max-width: 480px) {
+  html {
+    font-size: 14px;
+  }
+}
+
+@media screen and (min-width: 768px) {
+  html {
+    font-size: 16px;
+  }
+}
+
+@media screen and (min-width: 1024px) {
+  html {
+    font-size: 18px;
+  }
+}
+
+/* Touch-friendly button sizing for mobile */
+@media (pointer: coarse) {
+  button,
+  input[type="button"],
+  input[type="submit"],
+  input[type="reset"],
+  .button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* Better button and interactive element styling */
+button,
+input[type="button"],
+input[type="submit"],
+input[type="reset"] {
+  cursor: pointer;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-decoration: none;
+  padding: 0;
+  margin: 0;
+  display: inline-block;
+  text-align: center;
+  vertical-align: middle;
+  user-select: none;
+  touch-action: manipulation;
+}
+
+button:disabled,
+input[type="button"]:disabled,
+input[type="submit"]:disabled,
+input[type="reset"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Better form element styling */
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  padding: 0.5rem;
+  background-color: white;
+  transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: #805ad5;
+  box-shadow: 0 0 0 1px #805ad5;
+  outline: none;
+}
+
+input:invalid,
+textarea:invalid,
+select:invalid {
+  border-color: #e53e3e;
+}
+
+/* Better image handling */
+img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+img[width],
+img[height] {
+  max-width: none;
+}
+
+/* Better table styling */
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+th,
+td {
+  padding: 0.5rem;
+  text-align: left;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+th {
+  font-weight: 600;
+  background-color: #f7fafc;
+}
+
+/* Better link styling */
+a {
+  color: #805ad5;
+  text-decoration: none;
+  transition: color 0.2s ease-in-out;
+}
+
+a:hover {
+  color: #6b46c1;
+  text-decoration: underline;
+}
+
+a:focus {
+  outline: 2px solid #805ad5;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Loading and skeleton states */
+.loading {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* Custom scrollbar for webkit browsers */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e0;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a0aec0;
+}
+
+/* Dark mode scrollbar */
+@media (prefers-color-scheme: dark) {
+  ::-webkit-scrollbar-track {
+    background: #2d3748;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    background: #4a5568;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    background: #718096;
+  }
+}
+
+/* Performance optimizations */
+* {
+  /* Enable hardware acceleration for smoother animations */
+  transform: translateZ(0);
+  /* Optimize font rendering */
+  font-synthesis: none;
+}
+
+/* Optimize images for performance */
+img {
+  /* Improve image loading performance */
+  loading: lazy;
+  /* Better image decoding */
+  decoding: async;
+}
+
+/* Utility classes */
+.visually-hidden {
+  position: absolute !important;
+  clip: rect(1px, 1px, 1px, 1px) !important;
+  padding: 0 !important;
+  border: 0 !important;
+  height: 1px !important;
+  width: 1px !important;
+  overflow: hidden !important;
+}
+
+.clearfix::after {
+  content: "";
+  display: table;
+  clear: both;
+}
+
+/* Game-specific styles */
+.game-container {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.game-canvas {
+  display: block;
+  margin: 0 auto;
+  touch-action: none;
+  user-select: none;
+}
+
+/* Animation preferences */
+@media (prefers-reduced-motion: no-preference) {
+  .animate-fade-in {
+    animation: fadeIn 0.3s ease-in-out;
+  }
+  
+  .animate-slide-up {
+    animation: slideUp 0.4s ease-out;
+  }
+  
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  
+  @keyframes slideUp {
+    from {
+      transform: translateY(20px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
 }

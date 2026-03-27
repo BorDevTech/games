@@ -443,11 +443,13 @@ const Galaga: React.FC = () => {
 
   // Save game result
   const saveGameResult = useCallback(() => {
+    const player1Score = players[0]?.score || 0;
+    const player2Score = players[1]?.score || 0;
     const result: GameResult = {
-      player1Score: players[0]?.score || 0,
-      player2Score: players[1]?.score || 0,
-      winner: players[0]?.score > (players[1]?.score || 0) ? 'player1' : 
-              players[1]?.score > players[0]?.score ? 'player2' : 'draw',
+      player1Score,
+      player2Score,
+      winner: player1Score > player2Score ? 'player1' : 
+              player2Score > player1Score ? 'player2' : 'draw',
       mode: playerMode,
       timestamp: new Date()
     };
