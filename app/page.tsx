@@ -89,7 +89,7 @@ const GameHub: React.FC = () => {
   const getImplementedGameIds = (): string[] => {
     // Based on app/games/[id]/page.tsx, these games are implemented
  
-    return ['01', '02', '03', '04', '05'];  
+    return ['01', '02', '03', '04', '05', '06', '07'];  
   };
 
   // Function to map game ID to route ID
@@ -100,10 +100,12 @@ const GameHub: React.FC = () => {
       3: '03', // Tetris
       4: '04', // UNO-Like Card Game
       5: '05', // Connect Four
+      6: '06', // Asteroid
+      9: '07', // Frogger
       // Add more mappings here when games are implemented
-      // 6: '06', // Cyber Quest 2024
-      // 7: '07', // Space Warrior  
-      // 8: '08', // Mystic Realms 
+      // These placeholder IDs are not yet implemented:
+      // 7: '??', // Space Warrior  
+      // 8: '??', // Mystic Realms 
     };
     return gameRouteMap[gameId] || null;
   };
@@ -189,6 +191,26 @@ const GameHub: React.FC = () => {
       image: "https://via.placeholder.com/300x200/a855f7/ffffff?text=Mystic+Realms",
       price: "$59.99",
       description: "Build your kingdom in a magical world full of wonders."
+    },
+    {
+      id: 6,
+      title: "Asteroid",
+      genre: "Action/Arcade",
+      rating: 4.7,
+      players: "1-2 Players",
+      image: "https://via.placeholder.com/300x200/1a202c/ffffff?text=Asteroid",
+      price: "Free",
+      description: "Classic Asteroid shooter! Destroy waves of asteroids in cooperative or versus modes."
+    },
+    {
+      id: 9,
+      title: "Frogger",
+      genre: "Strategy",
+      rating: 4.8,
+      players: "2-4 Players",
+      image: "https://via.placeholder.com/300x200/38A169/ffffff?text=Frogger",
+      price: "Free",
+      description: "The classic Frogger! Guide your frog across the road and river to reach home. Supports 2–4 players!"
     }
   ];
 

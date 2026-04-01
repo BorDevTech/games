@@ -5,6 +5,7 @@ export function generateStaticParams() {
   return [
     { id: '01' },
     // Add more game IDs as they are implemented
+    { id: '07' },
   ];
 }
 
