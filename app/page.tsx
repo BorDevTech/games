@@ -89,7 +89,7 @@ const GameHub: React.FC = () => {
   const getImplementedGameIds = (): string[] => {
     // Based on app/games/[id]/page.tsx, these games are implemented
  
-    return ['01', '02', '03', '04', '05', '06', '07'];  
+    return ['01', '02', '03', '04', '05', '06', '07', '08'];  
   };
 
   // Function to map game ID to route ID
@@ -102,10 +102,11 @@ const GameHub: React.FC = () => {
       5: '05', // Connect Four
       6: '06', // Asteroid
       9: '07', // Frogger
+      10: '08', // Spades
       // Add more mappings here when games are implemented
       // These placeholder IDs are not yet implemented:
       // 7: '??', // Space Warrior  
-      // 8: '??', // Mystic Realms 
+      // 8: '??', // Mystic Realms
     };
     return gameRouteMap[gameId] || null;
   };
@@ -211,6 +212,16 @@ const GameHub: React.FC = () => {
       image: "https://via.placeholder.com/300x200/38A169/ffffff?text=Frogger",
       price: "Free",
       description: "The classic Frogger! Guide your frog across the road and river to reach home. Supports 2–4 players!"
+    },
+    {
+      id: 10,
+      title: "Spades",
+      genre: "Card/Strategy",
+      rating: 4.8,
+      players: "2-4 Players",
+      image: "https://via.placeholder.com/300x200/1A1A2E/ffffff?text=♠+Spades",
+      price: "Free",
+      description: "Classic trick-taking card game! Play with 1–4 humans, AI fills empty seats. Bid, play tricks, and be the first team to 500 points!"
     }
   ];
 

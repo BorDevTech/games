@@ -19,6 +19,7 @@ import UnoLike from '@/components/games/UnoLike';
 import ConnectFour from '@/components/games/ConnectFour';
 import Asteroid from '@/components/games/Asteroid'; 
 import Frogger from '@/components/games/Frogger';
+import Spades from '@/components/games/Spades';
 
 const GamePage: React.FC = () => {
   const params = useParams();
@@ -41,7 +42,9 @@ const GamePage: React.FC = () => {
     'asteroid': '06',   // Alternative direct name access
     'asteroids': '06',  // Alternative direct name access
     'frogger': '07',    // Alternative direct name access
-    'frog': '07'        // Alternative direct name access
+    'frog': '07',       // Alternative direct name access
+    'spades': '08',     // Alternative direct name access
+    'spade': '08'       // Alternative direct name access
   };
   
   // Check if we need to redirect to the correct ID
@@ -74,6 +77,8 @@ const GamePage: React.FC = () => {
         return <Asteroid />;
       case '07':
         return <Frogger />;
+      case '08':
+        return <Spades />;
       default:
         return (
           <VStack spacing={6} textAlign="center">
@@ -103,6 +108,8 @@ const GamePage: React.FC = () => {
         return 'Asteroid';
       case '07':
         return 'Frogger';
+      case '08':
+        return 'Spades';
       default:
         return 'Unknown Game';
     }
